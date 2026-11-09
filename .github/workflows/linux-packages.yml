@@ -84,7 +84,15 @@ jobs:
           cd /tmp/probe
           patch -Np1 -i "$ws/packaging/arch/proxypin-linux-fixes.patch"
           flutter pub get
-          flutter build linux --release -v
+          flutter build linux --release -v || {
+            echo "=== flutter build failed; re-running ninja for the real error"
+            ( cd build/linux/x64/release && ninja -v install 2>&1 | tail -120 ) || true
+            echo "=== pkg-config probes"
+            pkg-config --modversion gtk+-3.0 || true
+            pkg-config --modversion ayatana-appindicator3-0.1 || true
+            pkg-config --modversion appindicator3-0.1 || true
+            exit 1
+          }
           SH
           chmod +x /tmp/probe.sh
           chown builder /tmp/probe.sh
