@@ -137,7 +137,11 @@ jobs:
         run: |
           set -eux
           dnf -y -q install rpm-build patchelf
-          BUNDLE="$GITHUB_WORKSPACE/ci/bundle" ./packaging/rpm/build-rpm.sh
+          echo "--- downloaded artifact:"; find ci -maxdepth 3 -type d | head -20
+          # artifact 的层级会随 upload-artifact 的路径处理变化，这里直接按 ProxyPin 定位 bundle
+          BUNDLE=$(find ci -name ProxyPin -type f -printf '%h\n' | head -1)
+          test -n "$BUNDLE"
+          BUNDLE="$BUNDLE" ./packaging/rpm/build-rpm.sh
 
       - name: Collect artifacts
         run: |
