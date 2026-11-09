@@ -17,15 +17,32 @@ on:
       tag:
         description: '要发布到的 Release tag（留空则只构建，不发布）'
         required: false
+      ref:
+        description: '要构建的 commit/分支（留空 = 当前 ref）'
+        required: false
       flutter_version:
         description: 'Flutter SDK 版本'
+        default: '3.47.9'
+  # 供 sync-upstream.yml 调用：同步上游后构建并发布
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      ref:
+        type: string
+        required: false
+        default: main
+      flutter_version:
+        type: string
+        required: false
         default: '3.47.9'
 
 permissions:
   contents: write
 
 env:
-  FLUTTER_VERSION: ${{ github.event.inputs.flutter_version || '3.47.9' }}
+  FLUTTER_VERSION: ${{ github.event.inputs.flutter_version || inputs.flutter_version || '3.47.9' }}
 
 jobs:
   arch:
@@ -40,6 +57,8 @@ jobs:
             gtk3 libayatana-appindicator patchelf rustup fakeroot libarchive
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || inputs.ref || github.ref }}
 
       - name: Cache Flutter SDK
         id: flutter-cache
@@ -127,6 +146,8 @@ jobs:
     container: fedora:43
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || inputs.ref || github.ref }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -159,8 +180,8 @@ jobs:
   release:
     name: Publish release
     needs: [arch, rpm]
-    # 手动触发且没填 tag 时只产 artifact，不建 Release
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag) }}
+    # 手动触发且没填 tag 时只产 artifact，不建 Release；被 sync-upstream 调用时一定会发布
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag) || inputs.tag != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -172,8 +193,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ProxyPin ${{ github.event.inputs.tag || github.ref_name }} (Linux packages)
+          tag_name: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
+          name: ProxyPin ${{ inputs.tag || github.event.inputs.tag || github.ref_name }} (Linux packages)
           draft: false
           prerelease: false
           generate_release_notes: false

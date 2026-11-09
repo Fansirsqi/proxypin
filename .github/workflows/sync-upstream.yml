@@ -1,0 +1,165 @@
+name: Sync upstream, publish packages, update AUR
+
+# 每天检查一次上游（wanghongenpin/proxypin），有新提交就：
+#   1. 把上游 fast-forward 合进 fork 的 main；
+#   2. 确认 Linux 补丁还能干净应用（不能就开 issue 并失败，不要静默出坏包）；
+#   3. 打一个 v<版本>-linux.<时间戳> 的 tag，调用 linux-packages.yml 构建 Arch + RPM 并发布 Release；
+#   4. 同步 AUR 上的 proxypin-git（补丁/PKGBUILD 有变化时才会真的产生提交）。
+#
+# 需要的仓库密钥（Settings → Secrets and variables → Actions）：
+#   AUR_SSH_KEY : 你那把已注册到 AUR 的私钥（cat ~/.ssh/id_ed25519）。
+#                 没配置时会跳过 AUR 步骤并在日志里给出提示，不会让整个流程失败。
+#
+# 手动触发：Actions → 本工作流 → Run workflow（force 勾上 = 即使没有新提交也重新发布）。
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 每天 UTC 03:00
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '即使上游没有新提交也重新构建并发布'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream into main
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.merge.outputs.changed }}
+      tag: ${{ steps.merge.outputs.tag }}
+      version: ${{ steps.merge.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge upstream (fast-forward only)
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          set -euo pipefail
+          before=$(git rev-parse HEAD)
+
+          # 走 API：fork 的 parent 就是上游，GitHub 直接 fast-forward
+          code=$(curl -sS -o /tmp/merge.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/${{ github.repository }}/merge-upstream" -d '{"branch":"main"}')
+          echo "merge-upstream http=$code"
+          head -c 400 /tmp/merge.json || true
+          echo
+
+          git fetch -q origin main
+          after=$(git rev-parse origin/main)
+          git checkout -q "$after"
+          echo "before=$before after=$after"
+
+          version=$(grep '^version:' pubspec.yaml | sed 's/version: //; s/+.*//')
+          echo "version=$version"
+
+          if [[ $before == "$after" && ${FORCE:-false} != "true" ]]; then
+            echo "==> 上游没有新提交，跳过"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "==> 校验 Linux 补丁是否仍能干净应用"
+          if ! git apply --check packaging/arch/proxypin-linux-fixes.patch; then
+            echo "::error::proxypin-linux-fixes.patch 无法应用，需要人工 rebase"
+            {
+              echo "上游已更新到 \`$after\`（版本 $version），但 \`packaging/arch/proxypin-linux-fixes.patch\` 无法干净应用。"
+              echo
+              echo "CI 已停止，避免发布有问题的包。处理方式："
+              echo '```bash'
+              echo 'git fetch origin main && git checkout main'
+              echo 'git apply -3 packaging/arch/proxypin-linux-fixes.patch   # 解冲突'
+              echo 'git diff > packaging/arch/proxypin-linux-fixes.patch     # 重新生成'
+              echo '```'
+            } > /tmp/issue.md
+            body=$(python3 -c 'import json,sys; print(json.dumps({"title":"[linux-packages] 补丁无法应用到上游最新代码","body":open("/tmp/issue.md").read()}))')
+            curl -sS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              -X POST "$GITHUB_API_URL/repos/${{ github.repository }}/issues" -d "$body" >/dev/null || true
+            exit 1
+          fi
+
+          tag="v${version}-linux.$(date -u +%Y%m%d%H%M)"
+          echo "tag=$tag"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  packages:
+    name: Build and publish
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    uses: ./.github/workflows/linux-packages.yml
+    with:
+      tag: ${{ needs.sync.outputs.tag }}
+      ref: main
+    secrets: inherit
+    permissions:
+      contents: write
+
+  aur:
+    name: Update AUR proxypin-git
+    needs: [sync, packages]
+    if: needs.sync.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Push PKGBUILD/patch to AUR if changed
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          VERSION: ${{ needs.sync.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z ${AUR_SSH_KEY:-} ]]; then
+            echo "::notice::未配置 AUR_SSH_KEY 密钥，跳过 AUR 更新（把 ~/.ssh/id_ed25519 加进仓库 secrets 即可启用）"
+            exit 0
+          fi
+
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat > ~/.ssh/config <<'CFG'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            StrictHostKeyChecking accept-new
+          CFG
+          chmod 600 ~/.ssh/config
+
+          git clone -q ssh://aur@aur.archlinux.org/proxypin-git.git /tmp/aur
+          cd /tmp/aur
+
+          cp "$GITHUB_WORKSPACE/packaging/arch/aur/proxypin-git/PKGBUILD" .
+          cp "$GITHUB_WORKSPACE/packaging/arch/aur/proxypin-git/proxypin.desktop" .
+          cp "$GITHUB_WORKSPACE/packaging/arch/proxypin-linux-fixes.patch" .
+          makepkg --printsrcinfo > .SRCINFO
+
+          if git diff --quiet; then
+            echo "==> AUR 已经是最新，无需提交"
+            exit 0
+          fi
+
+          git config user.name "ProxyPin CI"
+          git config user.email "38542005+Fansirsqi@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Update to ${VERSION:-main}: refresh proxypin-linux-fixes.patch"
+          git push -q origin master
+          echo "==> AUR 已更新"
