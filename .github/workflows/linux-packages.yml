@@ -71,23 +71,24 @@ jobs:
           chmod -R a+rwX /opt/flutter
           useradd -m builder
           chown -R builder "$GITHUB_WORKSPACE"
-          su - builder -c 'git config --global --add safe.directory /opt/flutter; git config --global --add safe.directory /workspace'
+          su - builder -c "git config --global --add safe.directory /opt/flutter; git config --global --add safe.directory '$GITHUB_WORKSPACE'"
 
           # 先用与 makepkg 相同的方式（git archive + 打补丁）单独构建一次；失败时把 verbose 尾巴打出来，
           # 因为 makepkg 只会给出 "Build process failed" 这一行。
           cat > /tmp/probe.sh <<'SH'
           set -euo pipefail
+          ws=${1:?workspace path}
           export PATH=/opt/flutter/bin:$PATH
           rm -rf /tmp/probe && mkdir -p /tmp/probe
-          git -C /workspace archive HEAD | tar -x -C /tmp/probe
+          git -C "$ws" archive HEAD | tar -x -C /tmp/probe
           cd /tmp/probe
-          patch -Np1 -i /workspace/packaging/arch/proxypin-linux-fixes.patch
+          patch -Np1 -i "$ws/packaging/arch/proxypin-linux-fixes.patch"
           flutter pub get
           flutter build linux --release -v
           SH
           chmod +x /tmp/probe.sh
           chown builder /tmp/probe.sh
-          su - builder -c 'bash /tmp/probe.sh > /tmp/probe.log 2>&1' || {
+          su - builder -c "bash /tmp/probe.sh '$GITHUB_WORKSPACE' > /tmp/probe.log 2>&1" || {
             echo "=== probe build failed, tail of /tmp/probe.log:"
             tail -150 /tmp/probe.log
             exit 1
