@@ -1,0 +1,142 @@
+# Maintainer: ProxyPin Arch packaging
+# Contributor: local packaging (not affiliated with upstream)
+#
+# Build from source. Requires the Flutter SDK, which is not in the official
+# Arch repos: install `flutter-bin` (or `flutter`) from the AUR first, or point
+# FLUTTER_ROOT at an unpacked SDK.
+#
+# Fast, build-free alternative: ../proxypin-bin/PKGBUILD (repacks the upstream
+# release .deb, no Flutter/Rust toolchain needed).
+
+pkgname=proxypin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='HTTP/HTTPS packet capture and manipulation tool (Flutter, in-process MITM proxy)'
+arch=('x86_64')
+url='https://github.com/wanghongenpin/proxypin'
+license=('Apache-2.0')
+depends=(
+  'gtk3'
+  'glib2'
+  'libayatana-appindicator'   # tray_manager plugin
+  'ca-certificates'           # proxy CA / TLS interception
+  'ca-certificates-utils'     # update-ca-trust / trust (Arch CA store)
+  'hicolor-icon-theme'
+)
+makedepends=(
+  'clang'
+  'cmake'
+  'ninja'
+  'pkgconf'
+  'rust'                      # code_forge (flutter_rust_bridge / cargokit)
+  'patchelf'
+  'flutter-bin'               # AUR; `flutter` also works
+)
+optdepends=(
+  'xdg-desktop-portal: native file dialogs (file_picker)'
+  'libappindicator-gtk3: alternative tray backend'
+)
+conflicts=("${pkgname}-bin")
+provides=("${pkgname}")
+options=('!strip' '!debug')   # Flutter ships its own stripped engine/AOT snapshot
+
+# Set PROXYPIN_SRC=/path/to/proxypin to build from a local checkout instead of
+# downloading the release tarball (offline / development builds).
+if [[ -n ${PROXYPIN_SRC:-} ]]; then
+  source=()
+else
+  source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
+  sha256sums=('SKIP')
+fi
+
+_ensure_toolchain() {
+  # Flutter SDK -------------------------------------------------------------
+  if ! command -v flutter >/dev/null; then
+    for d in /opt/flutter/bin /usr/lib/flutter/bin "${FLUTTER_ROOT:-/nonexistent}/bin" \
+             "$HOME/flutter/bin" "$HOME/development/flutter/bin"; do
+      [[ -x $d/flutter ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v flutter >/dev/null || {
+    error 'flutter not found: install flutter-bin from the AUR or set FLUTTER_ROOT.'
+    return 1
+  }
+
+  # Rust (needed by code_forge's cargokit build hook) -----------------------
+  if ! command -v cargo >/dev/null; then
+    for d in "$HOME/.cargo/bin" /usr/lib/rustup/bin "$HOME"/.rustup/toolchains/*/bin; do
+      [[ -x $d/cargo ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v cargo >/dev/null || { error 'cargo not found: install rust.'; return 1; }
+}
+
+prepare() {
+  if [[ -n ${PROXYPIN_SRC:-} ]]; then
+    msg2 "Using local checkout: ${PROXYPIN_SRC}"
+    rm -rf "${srcdir}/${pkgname}-${pkgver}"
+    mkdir -p "${srcdir}/${pkgname}-${pkgver}"
+    if [[ -d ${PROXYPIN_SRC}/.git ]]; then
+      # Only committed files, so a dirty working tree cannot leak into the package.
+      git -C "${PROXYPIN_SRC}" archive --format=tar HEAD |
+        tar -x -C "${srcdir}/${pkgname}-${pkgver}"
+    else
+      # CI archives / plain directories without .git
+      tar -C "${PROXYPIN_SRC}" --exclude=.git --exclude=build --exclude=.dart_tool \
+        -cf - . | tar -x -C "${srcdir}/${pkgname}-${pkgver}"
+    fi
+  fi
+
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Linux fixes: build-time (appindicator deprecation + -Werror, missing Dart API
+  # DL symbols for code_forge, Debian-only icon path) and runtime (root-less CA
+  # install via pkexec, tray minimize / quit on KDE-Wayland).
+  local _patch="${startdir}/proxypin-linux-fixes.patch"
+  if patch -Np1 --dry-run -i "${_patch}" &>/dev/null; then
+    patch -Np1 -i "${_patch}"
+  fi
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  _ensure_toolchain
+
+  # Let the patched runner link the Dart SDK's dart_api_dl.c from the SDK that is
+  # actually being used (falls back to `flutter` on PATH inside CMake).
+  local _flutter_root
+  _flutter_root=$(dirname "$(dirname "$(command -v flutter)")")
+  export PROXYPIN_DART_API_DL_C="${_flutter_root}/bin/cache/dart-sdk/include/dart_api_dl.c"
+
+  flutter config --no-analytics >/dev/null 2>&1 || true
+  flutter pub get
+  flutter build linux --release
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  local _bundle='build/linux/x64/release/bundle'
+  local _libdir="${pkgdir}/usr/lib/${pkgname}"
+
+  install -dm755 "${_libdir}"
+  cp -a "${_bundle}/." "${_libdir}/"
+
+  # zstandard_linux ships an extra shared object that the Flutter build does not
+  # copy into the bundle, and the plugin's RUNPATH points into the build tree.
+  install -Dm644 'build/linux/x64/release/plugins/zstandard_linux/zstd_build/libzstandard_linux.so' \
+    "${_libdir}/lib/libzstandard_linux.so"
+
+  # Make every bundled library relocatable: RUNPATH=$ORIGIN.
+  find "${_libdir}" -type f -name '*.so*' -print0 |
+    xargs -0 -r patchelf --set-rpath '$ORIGIN'
+
+  install -d "${pkgdir}/usr/bin"
+  ln -s "/usr/lib/${pkgname}/ProxyPin" "${pkgdir}/usr/bin/${pkgname}"
+
+  install -Dm644 "${startdir}/proxypin.desktop" \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+  install -Dm644 'assets/icon.png' \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/proxypin.png"
+  install -Dm644 'LICENSE' "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

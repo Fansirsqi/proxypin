@@ -1,0 +1,159 @@
+name: Linux packages
+
+# 产出 Arch 包（.pkg.tar.zst）和 Fedora/RHEL 包（.rpm），可选自动挂到 Release 上。
+#
+# 触发方式：
+#   * 推送 tag（v1.4.0 之类）        -> 构建并发布到该 tag 的 Release
+#   * workflow_dispatch              -> 手动构建；填 tag 就发布，留空只产 artifact
+#
+# 说明：Linux 修复放在 packaging/arch/proxypin-linux-fixes.patch，顺便用它构建，
+# 因此这里的产物 = 上游代码 + 修复，与 AUR proxypin-git 一致。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布到的 Release tag（留空则只构建，不发布）'
+        required: false
+      flutter_version:
+        description: 'Flutter SDK 版本'
+        default: '3.47.9'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: ${{ github.event.inputs.flutter_version || '3.47.9' }}
+
+jobs:
+  arch:
+    name: Arch package
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git curl xz unzip which clang cmake ninja pkgconf \
+            gtk3 libayatana-appindicator patchelf rust fakeroot libarchive
+
+      - uses: actions/checkout@v4
+
+      - name: Cache Flutter SDK
+        id: flutter-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-x64-v1
+
+      - name: Install Flutter SDK
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          curl -fsSL -o /tmp/flutter.tar.xz \
+            "https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
+          mkdir -p /opt
+          tar -xJf /tmp/flutter.tar.xz -C /opt
+          rm -f /tmp/flutter.tar.xz
+
+      - name: Build bundle + Arch package
+        run: |
+          set -eux
+          export PATH=/opt/flutter/bin:$PATH
+          git config --global --add safe.directory /opt/flutter
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          flutter --version
+          flutter config --no-analytics
+          flutter precache --linux
+          # makepkg 不允许 root 运行，建个 builder 用户（容器里 uid 1000）
+          chmod -R a+rwX /opt/flutter
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su - builder -c "PATH=/opt/flutter/bin:\$PATH PROXYPIN_SRC='$GITHUB_WORKSPACE' bash '$GITHUB_WORKSPACE/packaging/arch/makepkg-ci.sh'"
+
+      - name: Collect artifacts
+        run: |
+          set -eux
+          mkdir -p out/bundle
+          # 打包后的目录已经是“补好 zstd 库 + RUNPATH=$ORIGIN”的形态，RPM 直接复用它
+          cp -a packaging/arch/pkg/proxypin/usr/lib/proxypin/. out/bundle/
+          cp -a packaging/arch/*.pkg.tar.zst out/
+          ls -l out out/bundle | head -30
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-pkg
+          path: out/
+          if-no-files-found: error
+
+  rpm:
+    name: Fedora/RHEL package
+    needs: arch
+    runs-on: ubuntu-latest
+    container: fedora:43
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: arch-pkg
+          path: ci
+
+      - name: Build RPM from the same bundle
+        run: |
+          set -eux
+          dnf -y -q install rpm-build patchelf
+          BUNDLE="$GITHUB_WORKSPACE/ci/bundle" ./packaging/rpm/build-rpm.sh
+
+      - name: Collect artifacts
+        run: |
+          set -eux
+          mkdir -p out
+          find packaging/rpm/dist -name '*.rpm' -exec cp -v {} out/ \;
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-pkg
+          path: out/
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [arch, rpm]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Show artifacts
+        run: find dist -type f -exec ls -lh {} \;
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ProxyPin ${{ github.event.inputs.tag || github.ref_name }} (Linux packages)
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            Linux 包（上游代码 + `packaging/arch/proxypin-linux-fixes.patch` 的修复）：
+
+            * Arch / CachyOS：`proxypin-*-x86_64.pkg.tar.zst`
+              ```bash
+              sudo pacman -U proxypin-*-x86_64.pkg.tar.zst
+              ```
+            * Fedora / RHEL：`proxypin-*.x86_64.rpm`
+              ```bash
+              sudo dnf install ./proxypin-*.x86_64.rpm
+              ```
+
+            修复内容：系统 CA 安装（polkit + 各发行版 trust store）、托盘图标/关闭/退出、Plasma 6 系统代理
+            （`kwriteconfig6`）与用户代理配置快照还原、`code_forge` FFI 符号。
+          files: |
+            dist/arch-pkg/*.pkg.tar.zst
+            dist/rpm-pkg/*.rpm

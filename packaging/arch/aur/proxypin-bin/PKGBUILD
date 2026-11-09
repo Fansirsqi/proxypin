@@ -1,0 +1,60 @@
+# Maintainer: <你的名字> <你的邮箱>
+#
+# Repacks the official upstream release .deb and fixes the relocatable paths so
+# it works outside the maintainer's build tree. No Flutter/Rust toolchain is
+# needed, so this is the fast path.
+#
+# Note: this is still the upstream binary, i.e. the runtime bugs fixed in
+# `proxypin-git` (certificate install without root, tray minimise / quit) are
+# still present here.
+
+pkgname=proxypin-bin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='HTTP/HTTPS packet capture and manipulation tool (official Linux build repacked)'
+arch=('x86_64')
+url='https://github.com/wanghongenpin/proxypin'
+license=('Apache-2.0')
+depends=(
+  'gtk3'
+  'glib2'
+  'libayatana-appindicator'
+  'ca-certificates'
+  'ca-certificates-utils'
+  'hicolor-icon-theme'
+)
+makedepends=('patchelf')
+optdepends=('xdg-desktop-portal: native file dialogs')
+conflicts=('proxypin')
+provides=("${pkgname%-bin}")
+options=('!strip' '!debug')
+
+source=("proxypin-linux.deb::${url}/releases/download/v${pkgver}/proxypin-linux.deb")
+sha256sums=('528f779964929ca063a55d314a20cf46d27fae065e00542bc919c15ea8dcd8ec')
+
+package() {
+  cd "${srcdir}"
+
+  # .deb is an ar archive: control.tar.*, data.tar.*, debian-binary
+  mkdir -p .deb
+  bsdtar -xf 'proxypin-linux.deb' -C .deb
+  bsdtar -xf .deb/data.tar.* -C "${pkgdir}"
+
+  # Upstream installs to /opt/proxypin; keep that layout so the binary's
+  # hardcoded icon path keeps working.
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s '/opt/proxypin/ProxyPin' "${pkgdir}/usr/bin/proxypin"
+
+  mv "${pkgdir}/usr/share/applications/proxy-pin.desktop" \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+  sed -i 's|^Exec=.*|Exec=proxypin|; s|^Icon=.*|Icon=proxypin|' \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+
+  # The upstream plugin libraries carry a RUNPATH pointing at the maintainer's
+  # build directory; make the bundle relocatable.
+  find "${pkgdir}/opt/proxypin" -type f -name '*.so' -print0 |
+    xargs -0 -r patchelf --set-rpath '$ORIGIN'
+
+  install -Dm644 "${pkgdir}/opt/proxypin/data/flutter_assets/assets/icon.png" \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/proxypin.png"
+}

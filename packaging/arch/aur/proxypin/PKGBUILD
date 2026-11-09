@@ -1,0 +1,114 @@
+# Maintainer: <你的名字> <你的邮箱>
+#
+# AUR-ready PKGBUILD: builds the released v1.4.0 source tarball and applies the
+# Linux fixes (build + runtime) that upstream still lacks. See the patch header
+# for details.
+#
+# Build needs the Flutter SDK, which is not in the official repos: install
+# `flutter-bin` from the AUR first (makedepends below is honoured by
+# `makepkg -s` / any AUR helper).
+
+pkgname=proxypin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='HTTP/HTTPS packet capture and manipulation tool with an in-process MITM proxy'
+arch=('x86_64')
+url='https://github.com/wanghongenpin/proxypin'
+license=('Apache-2.0')
+depends=(
+  'gtk3'
+  'glib2'
+  'libayatana-appindicator'   # tray_manager plugin
+  'ca-certificates'           # proxy CA / TLS interception
+  'ca-certificates-utils'     # trust / p11-kit anchors (Arch CA store)
+  'hicolor-icon-theme'
+)
+makedepends=(
+  'clang'
+  'cmake'
+  'ninja'
+  'pkgconf'
+  'rust'                      # code_forge (flutter_rust_bridge / cargokit)
+  'patchelf'
+  'flutter-bin'               # AUR
+)
+optdepends=(
+  'xdg-desktop-portal: native file dialogs (file_picker)'
+  'libappindicator-gtk3: alternative tray backend'
+)
+conflicts=("${pkgname}-bin")
+provides=("${pkgname}")
+options=('!strip' '!debug')
+
+source=(
+  "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+  'proxypin-linux-fixes.patch'
+  'proxypin.desktop'
+)
+sha256sums=(
+  '74648290b34d656433c1e781c37924b5b00c4b73af8c82fc47dd44e1d0032adb'
+  '125cfa4f47e268b154a95c3b9ef74d3fec6c088073de63745a83a4703f9234db'
+  '354e22fa87a7720a39890234c36975dd2fab989e2531b22b60a432b033cf4c7e'
+)
+
+_ensure_toolchain() {
+  if ! command -v flutter >/dev/null; then
+    for d in /opt/flutter/bin /usr/lib/flutter/bin "${FLUTTER_ROOT:-/nonexistent}/bin" \
+             "$HOME/flutter/bin"; do
+      [[ -x $d/flutter ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v flutter >/dev/null || { error 'flutter not found: install flutter-bin.'; return 1; }
+
+  if ! command -v cargo >/dev/null; then
+    for d in "$HOME/.cargo/bin" /usr/lib/rustup/bin "$HOME"/.rustup/toolchains/*/bin; do
+      [[ -x $d/cargo ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v cargo >/dev/null || { error 'cargo not found: install rust.'; return 1; }
+}
+
+prepare() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  patch -Np1 -i "${srcdir}/proxypin-linux-fixes.patch"
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  _ensure_toolchain
+
+  # The patch makes the runner link the Dart SDK's dart_api_dl.c; point it at the
+  # SDK that is actually in use (CMake also falls back to `flutter` on PATH).
+  export PROXYPIN_DART_API_DL_C="$(dirname "$(dirname "$(command -v flutter)")")/bin/cache/dart-sdk/include/dart_api_dl.c"
+
+  flutter config --no-analytics >/dev/null 2>&1 || true
+  flutter pub get
+  flutter build linux --release
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  local _bundle='build/linux/x64/release/bundle'
+  local _libdir="${pkgdir}/usr/lib/${pkgname}"
+
+  install -dm755 "${_libdir}"
+  cp -a "${_bundle}/." "${_libdir}/"
+
+  # The Flutter build does not copy this shared object into the bundle, and the
+  # plugin RUNPATH points at the build tree.
+  install -Dm644 'build/linux/x64/release/plugins/zstandard_linux/zstd_build/libzstandard_linux.so' \
+    "${_libdir}/lib/libzstandard_linux.so"
+
+  find "${_libdir}" -type f -name '*.so*' -print0 |
+    xargs -0 -r patchelf --set-rpath '$ORIGIN'
+
+  install -d "${pkgdir}/usr/bin"
+  ln -s "/usr/lib/${pkgname}/ProxyPin" "${pkgdir}/usr/bin/${pkgname}"
+
+  install -Dm644 "${srcdir}/proxypin.desktop" \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+  install -Dm644 'assets/icon.png' \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/proxypin.png"
+  install -Dm644 'LICENSE' "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
