@@ -28,83 +28,66 @@
 - 新文案如果 upstream 要求走 l10n：`pc_cert.dart` 里我沿用了该文件原有的 `isCN ? ... : ...` 内联写法；若被要求，改成 `lib/l10n/app_en.arb` + `app_zh.arb` 的 key。
 - `flutter analyze` 只报改动前就存在的 3 个 info（`menu_base` 直接 import 相关）；`flutter test` 的 5 个失败在纯 HEAD 上同样失败（依赖被重解析导致），PR 里说明“pre-existing, unrelated”。
 
-### PR 1 正文草稿
+### PR 正文（英文，已更新到 #996 / #997）
+
+PR 1（`fix/linux-build`）：
 
 ```markdown
-### 现象
-Arch/CachyOS（clang 19+/gcc 15+、libayatana-appindicator 0.6、Flutter 3.47）上无法构建，或构建出来的包功能降级：
+### Problem
 
-1. `tray_manager` 插件编译失败：`app_indicator_new` 被标记 deprecated，插件带 `-Werror`。
-2. 运行时报 `Failed to load dynamic library 'libcode_forge.so': undefined symbol: Dart_CurrentIsolate_DL`，编辑器相关功能（请求体/脚本/重写编辑器）静默失效——新引擎不再从 `libflutter_linux_gtk.so` 导出 `Dart_*`。
-3. release 窗口图标路径写死 `/opt/proxypin/...`（Debian 布局），非 deb 安装方式取不到图标。
+Building on Linux with current toolchains fails, or ships a degraded app:
 
-### 改动
-- `linux/CMakeLists.txt`
-  - 对 deprecated 告警不再 `-Werror`（只为兼容 tray_manager 现有代码）。
-  - 把 Dart SDK 的 `dart_api_dl.c` 编进宿主程序并 `-Wl,--export-dynamic`，FFI 插件即可解析 `Dart_InitializeApiDL` 等符号；路径可由 `PROXYPIN_DART_API_DL_C` 指定，缺省时从 PATH 上的 `flutter` 推断。
-- `linux/my_application.cc`：按 `/proc/self/exe` 解析 `data/flutter_assets/assets/icon.png`。
+- `tray_manager` still calls the deprecated `app_indicator_*` API and is compiled with `-Werror`, so clang 19 / gcc 15 abort the build with libayatana-appindicator 0.6.
+- `libcode_forge.so` fails with `undefined symbol: Dart_CurrentIsolate_DL`. Current engines no longer export `Dart_*` from `libflutter_linux_gtk.so`, so `RustLib.init()` fails and the editor features silently degrade.
+- The release window icon is hardcoded to `/opt/proxypin/...` (Debian layout), so any other install prefix gets a GTK warning and no icon.
 
-### 验证
-- Arch/CachyOS + Flutter 3.47.9 + clang 23：`flutter build linux --release` 通过；
-- 包内 `ProxyPin` 导出 45 个 `Dart_*` 符号，运行日志不再出现 `RustLib.init failed`。
+### Changes
+
+- `linux/CMakeLists.txt`: do not treat deprecated-declaration warnings as errors; compile the Dart SDK's `dart_api_dl.c` into the runner and export the dynamic symbol table (SDK path from `PROXYPIN_DART_API_DL_C`, otherwise derived from `flutter` on `PATH`).
+- `linux/my_application.cc`: resolve the icon relative to `/proc/self/exe`.
+
+### Testing
+
+- `flutter build linux --release` on Arch/CachyOS, Flutter 3.47.9 + clang 23.
+- The binary exports 45 `Dart_*` symbols and no longer logs `RustLib.init failed`.
+- Installed under `/usr/lib/proxypin`: icon loads, no GTK warning.
 ```
 
-### PR 2 正文草稿
+PR 2（`fix/linux-runtime`，3 个 commit）：
 
 ```markdown
-### 现象（KDE Wayland + XWayland 实测）
-1. 点「安装证书」→ 直接失败（Linux 分支用 `cp /usr/local/share/ca-certificates/` + `update-ca-certificates`）：
-   - 普通用户无权限，异常被吞掉只弹“安装失败”；
-   - Arch/Fedora 根本没有 `update-ca-certificates`（走 p11-kit `trust extract-compat`），该目录也不存在。
-2. 点 ❌ 关闭窗口 → 没有任何反应，进程只能 `pkill`。根因是两个 bug 叠加：
-   - `tray_manager` 的 Linux 实现**没有 `setToolTip`** → `DesktopTrayManager.ensureInitialized()` 抛
-     `MissingPluginException(No implementation found for method setToolTip on channel tray_manager)` →
-     “最小化到托盘”永远失败；
-   - 失败后走 `appExit()`，其中 `await windowManager.destroy()` 在 KDE Wayland 上**永不返回**，
-     窗口已销毁但进程残留。
+### Problem
 
-### 改动
-- `cert_installer.dart`：按发行版识别 CA 库（Debian `update-ca-certificates` / p11-kit `trust extract-compat`），
-  用 `pkexec sh -c 'install -Dm644 "$1" "$2" && <refresh>'` 一次提权完成拷贝+刷新；装完顺带写入
-  Chrome/Chromium 的 NSS 用户库（`~/.pki/nssdb`，用户级无需提权）；证书落盘名固定为 `proxypin-ca.crt`。
-  `isCertInstalled` 同时检查 p11-kit / Debian / openSUSE / `/etc/ssl/certs` 四个位置。
-- `pc_cert.dart`：Linux 手动页签补 Arch/Fedora/openSUSE 的命令，并说明自动安装走 polkit。
-- `desktop_tray.dart`：tooltip 调用容错；托盘图标改用 bundle 内 PNG（AppIndicator 只认真实文件）；
-  `hide()` 后校验窗口是否真的隐藏，隐藏失败就返回 false。
-- `system_proxy.dart`：Linux 分支不再依赖 `proxy_manager` 的 KDE 实现（它写死 `kwriteconfig5`，
-  Plasma 6 上抛异常），改为 gsettings + `kwriteconfig6`/`kwriteconfig5` 回退；`server.dart` 里
-  系统代理失败降级为日志。
-- `launch.dart`：桌面端**启动即初始化托盘图标**（上游只在关闭时懒加载，正常启动后系统托盘里没有
-  图标、也找不到「显示窗口/退出」入口）；托盘不可用/隐藏失败时直接退出而不是假装成功；
-  `appExit()` 不再 `await` 窗口销毁（`exit(0)` 兜底）、停代理加 3 秒超时、退出流程加防重入。
+Three Linux runtime issues, reproduced on KDE Plasma 6 (Wayland):
 
-### 系统代理（Plasma 6）
-`proxy_manager` 0.0.3 在 `XDG_CURRENT_DESKTOP=KDE` 时调用 `kwriteconfig5`，Plasma 6 只有
-`kwriteconfig6` → `ProcessException`：点「停止」后 UI 显示已停止、监听其实还在、并弹「失败」吐司
-（异常在 `ProxyServer.stop()` 里发生在 `server.stop()` 之前）。本 PR 在 `system_proxy.dart` 里
-自己实现 Linux 的 gsettings + `kwriteconfig6`（回退 `kwriteconfig5`），并让
-`ProxyServer.start()/stop()` 把系统代理失败降级为日志，不再影响代理启停。
+1. **Install certificate** fails silently. The Linux branch copies the CA to `/usr/local/share/ca-certificates` and runs `update-ca-certificates` as a normal user, which needs root; on Arch/Fedora neither the command nor the directory exists (p11-kit / `update-ca-trust` is used).
+2. **Closing the window** does nothing and the process can only be killed with `pkill`:
+   - `tray_manager` has no Linux `setToolTip`, so `DesktopTrayManager.ensureInitialized()` throws `MissingPluginException` and "minimize to tray" never works;
+   - the fallback then awaits `windowManager.destroy()`, which never returns on KDE/Wayland: the window is gone, the process stays, and `setPreventClose(true)` makes the window impossible to close.
+3. **Stop** reports a failure while the listener keeps running, and every stop wipes the user's proxy configuration:
+   - `proxy_manager 0.0.3` runs `kwriteconfig5`, which Plasma 6 removed (`kwriteconfig6`), so `stop()` throws before `server.stop()`;
+   - `cleanSystemProxy()` sets `mode=none`, discarding PAC / manual settings.
 
-### 系统代理配置不再被清空
-上游 `cleanSystemProxy()` 直接把模式置为 `none`，会连带清掉用户的 PAC / 手动代理配置。本 PR 在
-启用前把 gsettings（mode / autoconfig-url / ignore-hosts + 各协议的 enabled/host/port）和 KIO
-`[Proxy Settings]` 快照到 `~/.proxypin/system_proxy_backup.json`，停止时还原（用户原本没有的键
-删除），运行期间临时关闭 socks；没有快照时保持旧行为。
+### Changes
 
-### 验证（KDE Wayland + XWayland）
-| 操作 | 修复前 | 修复后 |
+- `cert_installer.dart`, `pc_cert.dart`: detect the trust store per distribution (p11-kit, Debian, Fedora `update-ca-trust`), install and refresh in one `pkexec sh -c ...` call so polkit prompts once; also add the CA to the NSS user DB (`~/.pki/nssdb`) for Chrome/Chromium; anchor is written as `proxypin-ca.crt`.
+- `desktop_tray.dart`, `launch.dart`: initialize the tray at startup (upstream only does it on the first "minimize to tray" close, so a normal start has no tray icon at all), tolerate the missing tooltip, use a bundled PNG for AppIndicator, verify that `hide()` actually hid the window, and exit without awaiting window destruction (proxy shutdown timeout, re-entry guard).
+- `system_proxy.dart`, `server.dart`: handle the Linux system proxy locally with `kwriteconfig6` (fallback `kwriteconfig5`), snapshot the previous gsettings/KIO values to `~/.proxypin/system_proxy_backup.json` and restore them on stop (keys that did not exist are removed), and treat system-proxy failures as non-fatal in `start()` / `stop()`.
+
+### Testing
+
+| Action | Before | After |
 | --- | --- | --- |
-| 关闭 → 最小化到托盘 | 抛 MissingPluginException，随后进程残留 | 窗口隐藏、托盘条目注册成功 |
-| 关闭 → 退出 | 窗口消失但进程残留，只能 pkill | 1 秒内退出 |
-| 安装证书 | 静默失败 | 弹 polkit 授权框，成功后系统库 + NSS 库均有 |
-| 启动后系统托盘 | 无图标 | 启动即出现图标，菜单可「显示窗口/退出」 |
-| 点「停止」 | 弹「失败」，端口仍在监听 | 端口立即关闭，无吐司 |
-| 停止后的系统代理 | 变成 `mode=none`，PAC 丢失 | 原样还原（PAC URL / 端口 / kioslaverc 全部恢复） |
+| Install certificate | silent failure, no prompt | polkit prompt, anchor + NSS DB written |
+| Tray icon after launch | none | present at startup, with Show/Quit menu |
+| Close → minimize to tray | exception, then leftover process | window hidden, tray item registered, restorable |
+| Close → quit | window gone, process alive (`pkill`) | exits within a second |
+| Stop button | failure toast, port still listening | port closed, no toast |
+| System proxy after stop | `mode=none`, PAC lost | original PAC URL / ports / kioslaverc restored |
 
-### 可选的更彻底方案
-`tray_manager` 已经到 0.8.x（本项目锁 0.5.3），新版本 Linux 端用 `libayatana-appindicator-glib`
-并实现了 `setToolTip`；`window_manager` 也有 0.6.0。如果愿意做依赖升级，本 PR 的 1、2 两个 workaround
-可以分别退化成一次版本 bump（需要适配 `menu_base` 的 API 变化并重测）。
+`flutter analyze` reports no new issues; the 5 failing `flutter test`s fail on unpatched `main` as well (dependency resolution), unrelated to this PR.
+
+Bumping `tray_manager` to 0.8.x would replace the first two workarounds (`libayatana-appindicator-glib` + `setToolTip`); I can open that as a separate PR if you prefer.
 ```
 
 ### 补丁清单（`packaging/arch/pr/`）
