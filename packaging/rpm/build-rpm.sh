@@ -8,6 +8,7 @@
 # 在 Arch 上也能跑：通过 docker 里的 Fedora 容器调用 rpmbuild（需要 docker + 联网）。
 # 在 Fedora 本机上直接跑则需要 rpm-build（dnf install rpm-build patchelf）。
 set -euo pipefail
+trap 'echo "!! build-rpm.sh 在第 $LINENO 行失败" >&2' ERR
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -37,9 +38,15 @@ find "$top/bundle" -type f -name '*.so*' -exec chmod 644 {} +
 
 # Flutter 不会把 zstandard_linux 依赖的 .so 拷进 bundle，且插件 RUNPATH 指向构建目录；
 # 不修的话包一离开构建目录就启动失败（与 Arch 包同一套处理）。
-zstd=$(find "$REPO/build/linux/x64/release/plugins/zstandard_linux" -name 'libzstandard_linux.so' 2>/dev/null | head -1)
+# bundle 里已经有 libzstandard_linux.so 时（CI 用的是打包后的目录）这里跳过即可
+zstd=""
+if [[ -d "$REPO/build/linux/x64/release/plugins/zstandard_linux" ]]; then
+  zstd=$(find "$REPO/build/linux/x64/release/plugins/zstandard_linux" -name 'libzstandard_linux.so' -print -quit 2>/dev/null || true)
+fi
 if [[ -n $zstd ]]; then
   cp -f "$zstd" "$top/bundle/lib/"
+elif [[ ! -f "$top/bundle/lib/libzstandard_linux.so" ]]; then
+  echo "警告：找不到 libzstandard_linux.so（Flutter 不会自动打包它），zstd 相关功能可能不可用" >&2
 fi
 if command -v patchelf >/dev/null; then
   find "$top/bundle" -name '*.so*' -type f -print0 | xargs -0 -r patchelf --set-rpath '$ORIGIN'
