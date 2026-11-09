@@ -5,9 +5,7 @@
 | 目录 | 产物 | 说明 |
 | --- | --- | --- |
 | `arch/` | `proxypin-<ver>-1-x86_64.pkg.tar.zst` | 从源码构建（需 Flutter SDK + Rust），落盘到 `/usr/lib/proxypin` |
-| `arch/aur/proxypin-git/` | AUR 包 | 已发布：`proxypin-git`，从 `main` 构建 + 打补丁 |
-| `arch/aur/proxypin/` | AUR 包 | release tag + 打补丁（暂不建议发，见 `arch/UPSTREAM-PR.md`） |
-| `arch/aur/proxypin-bin/` | AUR 包 | 重打包官方 `.deb`（1.4.0）+ RUNPATH 修复，给现有维护者的 patch |
+| `arch/aur/proxypin-git/` | AUR 包 | **我们唯一维护的 AUR 包**：从 `main` 构建 + 打补丁，CI 自动同步 |
 | `arch/pr/` | 上游 PR 补丁 | 4 个 `git format-patch` 文件，对应 PR #996 / #997 |
 | `rpm/` | `proxypin-<ver>-1.fcXX.x86_64.rpm` | 复用已构建的 bundle 打 RPM，落盘到 `/usr/lib64/proxypin` |
 
