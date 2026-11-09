@@ -22,13 +22,18 @@ if [[ ${1:-} == "--build" ]]; then
   ( cd "$REPO" && "$FLUTTER_BIN" build linux --release )
 fi
 
-[[ -x $BUNDLE/ProxyPin ]] || { echo "找不到 bundle：$BUNDLE（先 flutter build linux --release）" >&2; exit 1; }
+# 注意用 -f 而不是 -x：GitHub Actions 的 artifact 不保留权限位，下载下来的 ProxyPin 是 644
+[[ -f $BUNDLE/ProxyPin ]] || { echo "找不到 bundle：$BUNDLE（先 flutter build linux --release）" >&2; exit 1; }
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 top=$work/proxypin-$VERSION
 mkdir -p "$top"
 cp -a "$BUNDLE" "$top/bundle"
+# artifact 下载/解压后权限位会丢，重新补上（否则装完的应用没有执行权限）
+chmod 755 "$top/bundle/ProxyPin"
+find "$top/bundle" -type d -exec chmod 755 {} +
+find "$top/bundle" -type f -name '*.so*' -exec chmod 644 {} +
 
 # Flutter 不会把 zstandard_linux 依赖的 .so 拷进 bundle，且插件 RUNPATH 指向构建目录；
 # 不修的话包一离开构建目录就启动失败（与 Arch 包同一套处理）。
