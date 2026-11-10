@@ -29,8 +29,15 @@
 | --- | --- | --- |
 | 抓包列表密度 | 偏好设置 → 抓包列表密度 | 宽松（默认，保持原样）/ 紧凑（约 53px → 36px）/ 极紧凑（单行，约 19px，隐藏第二行） |
 | 代码字体 / 字号 | 偏好设置 → 代码字体 / 代码字号 | 作用于请求体、响应体、脚本编辑器等代码窗口；字体族在 Linux 上通过 `fc-list :spacing=mono` 枚举，另提供常见字体列表与自定义输入 |
+| 界面字体 / 字号 | 偏好设置 → 界面字体 / 界面字号 | 整个界面（代码窗口除外）的字体与缩放，字体族通过 `fc-list` 枚举 |
+| 界面密度 | 偏好设置 → 界面密度 | 按钮/列表/菜单的间距（`ThemeData.visualDensity`），和「抓包列表密度」是两项不同设置 |
 
-存到 `~/.proxypin/ui_config.json` 的 `captureListDensity` / `editorFontFamily` / `editorFontSize`。
+存到 `~/.proxypin/ui_config.json` 的 `captureListDensity` / `editorFontFamily` / `editorFontSize` /
+`appFontFamily` / `appFontScale` / `uiDensity`。
+
+**Linux 行为差异**：Impeller 后端下同一进程里的第二个 FlutterEngine 拿不到 GL 上下文（子窗口空白、
+关闭时 GLX 报 `BadAccess` 直接把进程 abort），所以 Linux 上工具箱工具、脚本/重写编辑器等都改成
+**在主窗口内以路由打开**（顺带去掉多余的 GTK 标题栏）；Windows/macOS 仍然开独立子窗口。
 
 ## GitHub Actions
 
