@@ -40,6 +40,10 @@
 **在主窗口内以路由打开**：只有一层标题栏，顶部 40px 是拖动区（主窗口无边框），页面自带返回键。
 Windows/macOS 仍然开独立子窗口。
 
+窗口是无边框的（`TitleBarStyle.hidden`），所以窗口管理器不再提供边缘 resize 热区；
+补丁在 `MaterialApp.builder` 外面套了 `WindowResizeBorder`（四条边 + 四个角各 4px 透明热区，
+按下即 `windowManager.startResizing(edge)`，光标形状跟着变），并显式 `setResizable(true)`。
+
 打包时还兜底装了一个 Flutter 自己会漏掉的库：`flutter_js` 的预编译
 `libquickjs_c_bridge_plugin.so`（干净构建时插件会把它装到错误的前缀，运行时报
 `Failed to load dynamic library 'libquickjs_c_bridge_plugin.so'`，JS 工具与脚本拦截器全挂）。

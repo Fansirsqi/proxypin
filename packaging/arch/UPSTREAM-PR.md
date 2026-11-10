@@ -13,6 +13,17 @@
 
 上游仓库活跃（14.3k star，最近 65 个关闭 PR 里 29 个被合并），**接受外部 PR**。
 
+已提交（2026-11-10）：
+
+| PR | 分支 | 内容 |
+| --- | --- | --- |
+| #996 | `fix/linux-build` | 编译期：appindicator 弃用告警、`dart_api_dl`、图标路径 |
+| #997 | `fix/linux-runtime` | 运行期：CA 安装（polkit）、托盘/关闭/退出、Plasma 6 系统代理 + 配置快照还原 |
+| #999 | `fix/linux-windows` | Linux 子窗口改内嵌路由、quickjs 桥接库、JS 输出面板、无边框窗口边缘缩放 |
+| #1000 | `feat/ui-settings-and-fonts` | 抓包列表密度、代码字体/字号、界面字体/字号、界面密度 |
+
+建议合并顺序：#996 → #997 → #999 → #1000（后面的 PR 都基于 `main`，前者合入后 diff 会自动收敛）。
+
 ## 二、往上游提 PR
 
 ### 原则
