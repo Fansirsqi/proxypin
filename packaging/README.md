@@ -37,7 +37,12 @@
 
 **Linux 行为差异**：Impeller 后端下同一进程里的第二个 FlutterEngine 拿不到 GL 上下文（子窗口空白、
 关闭时 GLX 报 `BadAccess` 直接把进程 abort），所以 Linux 上工具箱工具、脚本/重写编辑器等都改成
-**在主窗口内以路由打开**（顺带去掉多余的 GTK 标题栏）；Windows/macOS 仍然开独立子窗口。
+**在主窗口内以路由打开**：只有一层标题栏，顶部 40px 是拖动区（主窗口无边框），页面自带返回键。
+Windows/macOS 仍然开独立子窗口。
+
+打包时还兜底装了一个 Flutter 自己会漏掉的库：`flutter_js` 的预编译
+`libquickjs_c_bridge_plugin.so`（干净构建时插件会把它装到错误的前缀，运行时报
+`Failed to load dynamic library 'libquickjs_c_bridge_plugin.so'`，JS 工具与脚本拦截器全挂）。
 
 ## GitHub Actions
 
