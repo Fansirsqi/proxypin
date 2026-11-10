@@ -1,0 +1,109 @@
+# Maintainer: Fansirsqi <38542005+Fansirsqi@users.noreply.github.com>
+#
+# Release 包：v1.4.0 tag + packaging/arch/proxypin-linux-fixes.patch。
+#
+# 注意：v1.4.0 tag 之后的 main 分支还有一批修复（UI/多窗口等），且当前 Flutter 版本下
+# 用 tag 构建会出现主窗口不显示的问题，所以日常使用请装 `proxypin-git`；这里保留是为了
+# 上游发新版本后可以快速更新 release 包。
+#
+# Flutter SDK 不在官方仓库，需要 AUR 的 `flutter-bin`。
+
+pkgname=proxypin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='HTTP/HTTPS packet capture and manipulation tool with an in-process MITM proxy'
+arch=('x86_64')
+url='https://github.com/wanghongenpin/proxypin'
+license=('Apache-2.0')
+depends=(
+  'gtk3'
+  'glib2'
+  'libayatana-appindicator'
+  'ca-certificates'
+  'ca-certificates-utils'
+  'hicolor-icon-theme'
+)
+makedepends=(
+  'clang'
+  'cmake'
+  'ninja'
+  'pkgconf'
+  'rust'
+  'patchelf'
+  'flutter-bin'
+)
+optdepends=(
+  'xdg-desktop-portal: native file dialogs (file_picker)'
+  'libappindicator-gtk3: alternative tray backend'
+)
+conflicts=("${pkgname}-bin")
+provides=("${pkgname}")
+options=('!strip' '!debug')
+
+source=(
+  "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+  'proxypin-linux-fixes.patch'
+  'proxypin.desktop'
+)
+sha256sums=(
+  '74648290b34d656433c1e781c37924b5b00c4b73af8c82fc47dd44e1d0032adb'
+  'b96f4cf5acdbd8be64b6fa6b312fc0332214e75b2ccc1e272890cf336037f006'
+  '354e22fa87a7720a39890234c36975dd2fab989e2531b22b60a432b033cf4c7e'
+)
+
+_ensure_toolchain() {
+  if ! command -v flutter >/dev/null; then
+    for d in /opt/flutter/bin /usr/lib/flutter/bin "${FLUTTER_ROOT:-/nonexistent}/bin" "$HOME/flutter/bin"; do
+      [[ -x $d/flutter ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v flutter >/dev/null || { error 'flutter not found: install flutter-bin.'; return 1; }
+
+  if ! command -v cargo >/dev/null; then
+    for d in "$HOME/.cargo/bin" /usr/lib/rustup/bin "$HOME"/.rustup/toolchains/*/bin; do
+      [[ -x $d/cargo ]] && export PATH="$d:$PATH" && break
+    done
+  fi
+  command -v cargo >/dev/null || { error 'cargo not found: install rust.'; return 1; }
+}
+
+prepare() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  patch -Np1 -i "${srcdir}/proxypin-linux-fixes.patch"
+}
+
+build() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+  _ensure_toolchain
+
+  export PROXYPIN_DART_API_DL_C="$(dirname "$(dirname "$(command -v flutter)")")/bin/cache/dart-sdk/include/dart_api_dl.c"
+
+  flutter config --no-analytics >/dev/null 2>&1 || true
+  flutter pub get
+  flutter build linux --release
+}
+
+package() {
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  local _bundle='build/linux/x64/release/bundle'
+  local _libdir="${pkgdir}/usr/lib/${pkgname}"
+
+  install -dm755 "${_libdir}"
+  cp -a "${_bundle}/." "${_libdir}/"
+
+  install -Dm644 'build/linux/x64/release/plugins/zstandard_linux/zstd_build/libzstandard_linux.so' \
+    "${_libdir}/lib/libzstandard_linux.so"
+
+  find "${_libdir}" -type f -name '*.so*' -print0 |
+    xargs -0 -r patchelf --set-rpath '$ORIGIN'
+
+  install -d "${pkgdir}/usr/bin"
+  ln -s "/usr/lib/${pkgname}/ProxyPin" "${pkgdir}/usr/bin/${pkgname}"
+
+  install -Dm644 "${srcdir}/proxypin.desktop" \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+  install -Dm644 'assets/icon.png' \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/proxypin.png"
+  install -Dm644 'LICENSE' "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

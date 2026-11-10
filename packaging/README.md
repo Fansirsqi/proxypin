@@ -21,6 +21,17 @@
 6. 启动后系统托盘没有图标（改为启动即注册）；
 7. Plasma 6 上「停止」报失败且端口仍在监听（`kwriteconfig5` 缺失）+ 停止会清空用户 PAC（改为快照/还原）。
 
+## 额外的本地增强（不进上游 PR）
+
+除了上面的 Linux 修复，这套补丁还带两个界面设置（上游目前没有）：
+
+| 设置 | 位置 | 说明 |
+| --- | --- | --- |
+| 抓包列表密度 | 偏好设置 → 抓包列表密度 | 宽松（默认，保持原样）/ 紧凑（约 53px → 36px）/ 极紧凑（单行，约 19px，隐藏第二行） |
+| 代码字体 / 字号 | 偏好设置 → 代码字体 / 代码字号 | 作用于请求体、响应体、脚本编辑器等代码窗口；字体族在 Linux 上通过 `fc-list :spacing=mono` 枚举，另提供常见字体列表与自定义输入 |
+
+存到 `~/.proxypin/ui_config.json` 的 `captureListDensity` / `editorFontFamily` / `editorFontSize`。
+
 ## GitHub Actions
 
 `.github/workflows/linux-packages.yml`：

@@ -72,7 +72,8 @@ build_local() {
 build_docker() {
   command -v docker >/dev/null || { echo "需要 docker 或 rpmbuild" >&2; exit 1; }
   echo "==> docker: $FEDORA_IMAGE 里 rpmbuild"
-  docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  # 容器里必须以 root 跑 dnf/rpmbuild，结束前把产物 chown 回宿主的 uid
+  docker run --rm -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
     -v "$HERE:/src:ro" -v "$OUT:/out" \
     "$FEDORA_IMAGE" bash -ec '
       dnf -y -q --setopt=install_weak_deps=False install rpm-build >/dev/null
@@ -82,6 +83,7 @@ build_docker() {
         --define "_sourcedir /work" \
         --define "_rpmdir /out" \
         --define "debug_package %{nil}" >/dev/null
+      chown -R "$HOST_UID:$HOST_GID" /out
     '
 }
 

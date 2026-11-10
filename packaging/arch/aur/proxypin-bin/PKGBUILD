@@ -1,0 +1,54 @@
+# Maintainer: Fansirsqi <38542005+Fansirsqi@users.noreply.github.com>
+#
+# 重打包官方 release .deb：不需要 Flutter/Rust，秒级构建。
+# 注意：这是上游旧二进制，proxypin-git 里的运行时修复这里都没有。
+#
+#   cd packaging/arch/aur/proxypin-bin && makepkg -si
+
+pkgname=proxypin-bin
+pkgver=1.4.0
+pkgrel=1
+pkgdesc='HTTP/HTTPS packet capture and manipulation tool (official Linux build repacked)'
+arch=('x86_64')
+url='https://github.com/wanghongenpin/proxypin'
+license=('Apache-2.0')
+depends=(
+  'gtk3'
+  'glib2'
+  'libayatana-appindicator'
+  'ca-certificates'
+  'ca-certificates-utils'
+  'hicolor-icon-theme'
+)
+makedepends=('patchelf')
+optdepends=('xdg-desktop-portal: native file dialogs')
+conflicts=('proxypin')
+provides=("${pkgname%-bin}")
+options=('!strip' '!debug')
+
+source=("proxypin-linux.deb::${url}/releases/download/v${pkgver}/proxypin-linux.deb")
+sha256sums=('528f779964929ca063a55d314a20cf46d27fae065e00542bc919c15ea8dcd8ec')
+
+package() {
+  cd "${srcdir}"
+
+  # .deb 是 ar 归档：control.tar.* / data.tar.* / debian-binary
+  mkdir -p .deb
+  bsdtar -xf 'proxypin-linux.deb' -C .deb
+  bsdtar -xf .deb/data.tar.* -C "${pkgdir}"
+
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s '/opt/proxypin/ProxyPin' "${pkgdir}/usr/bin/proxypin"
+
+  mv "${pkgdir}/usr/share/applications/proxy-pin.desktop" \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+  sed -i 's|^Exec=.*|Exec=proxypin|; s|^Icon=.*|Icon=proxypin|' \
+    "${pkgdir}/usr/share/applications/proxypin.desktop"
+
+  # 上游插件库的 RUNPATH 指向维护者的构建目录，改成 $ORIGIN 才能随包搬运
+  find "${pkgdir}/opt/proxypin" -type f -name '*.so' -print0 |
+    xargs -0 -r patchelf --set-rpath '$ORIGIN'
+
+  install -Dm644 "${pkgdir}/opt/proxypin/data/flutter_assets/assets/icon.png" \
+    "${pkgdir}/usr/share/icons/hicolor/256x256/apps/proxypin.png"
+}
