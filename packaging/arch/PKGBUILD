@@ -110,6 +110,8 @@ build() {
 
   flutter config --no-analytics >/dev/null 2>&1 || true
   flutter pub get
+  # 补丁只带 .arb 文案，不带宽 l10n 生成物（避免每次上游同步都冲突），这里显式生成一次
+  flutter gen-l10n
   flutter build linux --release
 }
 
