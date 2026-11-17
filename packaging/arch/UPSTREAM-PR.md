@@ -53,111 +53,105 @@
 共同点：单语、开头一句话说清“什么坏了”，改动按文件/子系统列 bullet，验证只写可复现的结论；
 不贴大段日志，除了“Generated with …”这类声明，正文没有多余的元信息。
 
-上游没有双语 PR 的先例，但维护者是中文母语、仓库面向国际用户，所以本仓库统一用
-**英文正文 + `## 中文` 摘要**：每段 6–10 行，长表格只留一张最有说服力的（改前/改后对照）。
+上游没有双语 PR 的先例，但维护者是中文母语、仓库面向国际用户，所以统一用**分段双语**：
+标题写 `中文 / English`，段内中文一句、英文一句紧跟着，不做两份重复正文——同样的信息量下篇幅只有
+「英文正文 + 中文摘要」的一半。
 
-### PR 正文（双语，2026-11-17 更新，已同步到 GitHub）
+### PR 正文（双语，2026-11-17 已同步到 GitHub）
+
+格式：每段标题用 `中文 / English`，段内先中文一句、再英文一句；标题只用「问题 / 改动 / 验证」三段，
+长表格最多留一张改前/改后对照。这样 PR 整体 20~30 行，中英读者都能扫完。
 
 #996 `fix/linux-build`：
 
-```markdown
-## Problem
+````markdown
+### 问题 / Problem
 
-Linux builds break, or ship a degraded app, with current toolchains:
+Arch / CachyOS（clang 19+、libayatana-appindicator 0.6、Flutter 3.44+）上源码构建失败，且构建出来的包功能残缺。
 
-- `tray_manager` still calls the deprecated `app_indicator_*` API and is compiled with `-Werror`, so clang 19 / gcc 15 abort the build with libayatana-appindicator 0.6.
-- `libcode_forge.so` fails with `undefined symbol: Dart_CurrentIsolate_DL`: current engines no longer export `Dart_*`, so `RustLib.init()` fails and the editor features degrade.
-- The window icon is hardcoded to `/opt/proxypin/...`, so any other install prefix gets a GTK warning and no icon.
+On Arch/CachyOS (clang 19+, libayatana-appindicator 0.6, Flutter 3.44+) the source build fails, and the resulting package is degraded.
 
-## Changes
+1. `tray_manager` 编译失败：`app_indicator_new` 被标记 deprecated，插件带 `-Werror`。
+2. 运行时 `Failed to load dynamic library 'libcode_forge.so': undefined symbol: Dart_CurrentIsolate_DL`，编辑器相关功能静默失效。
+3. release 窗口图标写死 `/opt/proxypin/...`（Debian 布局），其它安装 prefix 没有图标。
 
-- `linux/CMakeLists.txt`: deprecation warnings are not errors; compile the SDK's `dart_api_dl.c` into the runner and export the dynamic symbol table.
-- `linux/my_application.cc`: resolve the icon relative to `/proc/self/exe`.
+### 改动 / Changes
 
-## Testing
+- `linux/CMakeLists.txt`
+  - deprecated 声明不再 `-Werror`（仅为兼容现有 tray_manager；升到 0.8.x 后可去掉）。
+  - 把 Dart SDK 的 `dart_api_dl.c` 编进 runner 并 `-Wl,--export-dynamic`，FFI 插件即可解析 `Dart_*` 符号（路径可用 `PROXYPIN_DART_API_DL_C` 指定，默认从 `flutter` 推导）。
+- `linux/my_application.cc`：图标按 `/proc/self/exe` 解析，任意 prefix 可用。
 
-`flutter build linux --release` on Arch/CachyOS (Flutter 3.47.9, clang 23): 45 `Dart_*` symbols exported, no `RustLib.init failed`; installed under `/usr/lib/proxypin`, the icon loads without warnings.
+### 验证 / Verification
 
-## 中文
-
-当前工具链下 Linux 构建会失败或功能降级：appindicator 弃用 API 被 `-Werror` 拦下；引擎不再导出 `Dart_*`，`libcode_forge.so` 报 `undefined symbol`，编辑器功能静默失效；窗口图标写死 `/opt/proxypin`。
-
-改动：CMake 不再把弃用告警当错误，编入 SDK 的 `dart_api_dl.c` 并导出符号；图标按 `/proc/self/exe` 解析。已在 Arch/CachyOS 上构建并安装验证（图标正常、无 `RustLib.init failed`）。
-```
+- Arch + Flutter 3.47.9 + clang 23：`flutter build linux --release` 通过；产物导出 45 个 `Dart_*` 符号，运行日志不再有 `RustLib.init failed`。
+- Verified on Arch with Flutter 3.47.9 / clang 23: the release build succeeds, the binary exports 45 `Dart_*` symbols and `RustLib.init failed` no longer appears.
+````
 
 #997 `fix/linux-runtime`：
 
-```markdown
-## Problem
+````markdown
+### 问题 / Problem
 
-Three Linux runtime issues (KDE Plasma 6, Wayland):
+KDE Plasma 6（Wayland + XWayland）上三个影响使用的问题：
 
-1. **Install certificate** fails silently: it writes `/usr/local/share/ca-certificates` and runs `update-ca-certificates` as a normal user (root is required, and Arch/Fedora use p11-kit or `update-ca-trust`).
-2. **Close and quit do nothing**, the process lives on until `pkill`: `tray_manager` has no Linux `setToolTip` (throws `MissingPluginException`), and the fallback awaits `windowManager.destroy()`, which never returns.
-3. **Stop** reports a failure while the listener keeps running, and wipes the user's proxy configuration: `proxy_manager` calls the removed `kwriteconfig5`, and `cleanSystemProxy()` sets `mode=none`, dropping PAC and manual settings.
+Three user-visible Linux bugs on Plasma 6 (Wayland + XWayland):
 
-## Changes
+1. **安装证书失败**：Linux 分支 `cp` 到 `/usr/local/share/ca-certificates` + `update-ca-certificates`，普通用户无权限；Arch/Fedora 根本没这个命令（走 p11-kit / `update-ca-trust`），目录也不存在。
+   **CA install fails**: the Linux branch copies the CA to a root-owned dir and runs a command that doesn't exist on Arch/Fedora.
+2. **点 ❌ 关不掉**：`tray_manager` 的 Linux 实现没有 `setToolTip`，托盘初始化抛 `MissingPluginException`；随后 `await windowManager.destroy()` 在 Wayland 上不返回，进程残留只能 `pkill`。另外托盘图标只在关闭时才初始化，启动后系统托盘里看不到图标。
+   **Close/quit broken**: `setToolTip` is missing on Linux so tray init throws, and the fallback `await destroy()` never returns on Wayland.
+3. **Plasma 6「停止」报失败、端口仍在监听**：`proxy_manager` 0.0.3 写死 `kwriteconfig5`（Plasma 6 只有 `kwriteconfig6`）抛异常，异常发生在 `server.stop()` 之前；同时停止会把用户 PAC / 手动代理配置清成 `mode=none`。
+   **Stop fails on Plasma 6**: `proxy_manager` calls the removed `kwriteconfig5`, and stopping wipes the user's proxy configuration.
 
-- `cert_installer.dart` / `pc_cert.dart`: pick the trust store per distribution, install and refresh in one `pkexec sh -c …` (a single polkit prompt), and add the CA to the NSS DB for Chrome/Chromium.
-- `desktop_tray.dart` / `launch.dart`: create the tray at startup, tolerate the missing tooltip, verify that `hide()` actually hid the window, and exit without awaiting window destruction.
-- `system_proxy.dart` / `server.dart`: use `kwriteconfig6` (fallback `kwriteconfig5`), snapshot the previous gsettings/KIO values and restore them on stop, and treat system-proxy failures as non-fatal.
+### 改动 / Changes
 
-## Testing
+- `cert_installer.dart` / `pc_cert.dart`：按发行版识别信任库（Debian、p11-kit、Fedora `update-ca-trust`），用一次 `pkexec` 完成拷贝+刷新；顺带写入 Chrome 的 NSS 用户库（`~/.pki/nssdb`）。
+- `desktop_tray.dart` / `launch.dart`：启动即注册托盘；tooltip 缺失容错；`hide()` 后校验是否真的隐藏；退出不再 `await` 窗口销毁（`exit(0)` 兜底），停代理加超时、退出防重入。
+- `system_proxy.dart` / `server.dart`：gsettings + `kwriteconfig6`（回退 `kwriteconfig5`）；启用前快照用户配置，停止时还原（用户原本没有的键删除）；系统代理失败降级为日志，不再影响代理启停。
 
-| Action | Before | After |
+### 验证 / Verification
+
+| | 修复前 / Before | 修复后 / After |
 | --- | --- | --- |
-| Install certificate | silent failure | polkit prompt, anchor + NSS DB written |
-| Tray icon after launch | none | present at startup |
-| Close → tray | exception, leftover process | window hidden, restorable |
-| Close → quit | process alive | exits within a second |
-| Stop | failure toast, port still open | port closed |
-| System proxy after stop | `mode=none`, PAC lost | PAC URL / ports / kioslaverc restored |
-
-No new `flutter analyze` issues; the 5 failing `flutter test`s fail on unpatched `main` as well.
-
-## 中文
-
-Plasma 6 / Wayland 下三处运行时问题：①装证书静默失败（普通用户写系统目录，Arch/Fedora 走 p11-kit）；②关窗/退出无反应，进程残留（`tray_manager` 没有 Linux tooltip 会抛异常，回退分支 `await destroy()` 永不返回）；③点停止报错但监听仍在，还会清空系统代理（Plasma 6 已移除 `kwriteconfig5`，`cleanSystemProxy()` 直接设 `mode=none`）。
-
-改动：按发行版选信任库并合并为一次 `pkexec` 提权，同时写入 Chrome 的 NSS 库；启动即注册托盘、容错 tooltip、校验 `hide()`、退出不等待 destroy；改用 `kwriteconfig6`，停机前快照并在停机后还原 gsettings/KIO 配置，系统代理失败降级为非致命。
-```
+| 安装证书 | 静默失败 | polkit 授权后写入系统库 + NSS |
+| 启动后托盘 | 无图标 | 启动即有图标（显示窗口 / 退出） |
+| 关闭 → 退出 | 窗口消失、进程残留 | 1 秒内退出 |
+| 点「停止」 | 弹失败、端口仍监听 | 端口立即关闭 |
+| 停止后的系统代理 | `mode=none`，PAC 丢失 | 原样还原 |
+````
 
 #1000 `feat/ui-settings-and-fonts`：
 
-```markdown
-## Summary
+````markdown
+### 说明 / Summary
 
-Four display settings, persisted in `ui_config.json` and exposed on both desktop and mobile preferences:
+抓包列表密度、代码字体、界面字体/字号这几项目前是写死的，这里做成设置项（桌面 + 移动端都有入口）。
 
-| Setting | Values |
-| --- | --- |
-| Capture list density | comfortable (default) / compact / dense — row padding, font sizes, meta line, icon sizes |
-| Code font family + size | system default / any monospace family, 10–20 |
-| Interface font family + scale | system default / any installed family, 85%–125% |
-| Interface density | comfortable / compact / dense (`ThemeData.visualDensity`) |
+Capture list density, code font and interface font/size are hard-coded today; this adds settings for them (entries on both desktop and mobile).
 
-`comfortable` reproduces the current layout exactly (row height 53px → 36px → 19px on a 1000px window). A shared `codeTextStyle()` keeps the body viewers, the CodeForge editors and the toolbox surfaces in sync; font families come from `fc-list` on Linux with a curated fallback list elsewhere.
+### 改动 / Changes
 
-This branch also carries the four Linux window/quickjs commits from #999 (now closed), so the diff is 51 files — the settings work is the last commit only.
+- `configuration.dart`：新增 `captureListDensity` / `editorFontFamily` / `editorFontSize` / `appFontFamily` / `appFontScale` / `visualDensity`，随 `ui_config.json` 持久化。
+- `lib/ui/component/code_style.dart`（新增）：代码区域的统一文本样式与 `CaptureRowMetrics`，供列表行高、行内代码、toolbox 复用。
+- `app_appearance_setting.dart` / `code_font_setting.dart`（新增）+ `preference.dart`：设置界面；`system_fonts.dart` 负责枚举系统等宽字体。
+- 各语言 `.arb` 增加对应文案。
 
-## Testing
+### 验证 / Verification
 
-Plasma 6 with real captured traffic: rows measure 53/36/19px for the three densities, a custom code font renders in the body viewer, and interface font/scale apply to the UI while the code editors keep their own setting. `flutter analyze` is clean apart from pre-existing infos; `flutter test` unchanged.
+- `flutter analyze`：0 error / 0 warning（桌面 + 移动端入口都能正常打开并持久化）。
+- Verified with `flutter analyze` (0 errors / 0 warnings); settings persist to `ui_config.json` and apply immediately.
+````
 
-## 中文
+#999（已关闭）关闭说明，同时贴在评论里：
 
-新增四个显示设置（抓包列表密度、代码字体与字号、界面字体与缩放、界面密度），存在 `ui_config.json`，桌面端和移动端的设置页都能修改。`comfortable` 与现状完全一致；共用 `codeTextStyle()` 让正文查看器、CodeForge 各编辑器和工具箱同步生效；Linux 用 `fc-list` 枚举字体，其它平台用内置列表。
+````markdown
+Contents of this PR are fully contained in #1000 (same 4 commits), and it does not compile on its own:
+`code_style.dart` / `CaptureRowMetrics` / `codeTextStyle` only exist in the settings commit of #1000.
 
-本分支同时包含原 #999 的四个 Linux 子窗口/quickjs 提交（#999 已关闭），所以 diff 是 51 个文件，设置本身只是最后一个提交。
-```
-
-#999 关闭留言（已发）：
-
-```markdown
-Closing in favour of #1000: the four commits here are the first four commits of #1000's branch, so this content lands with #1000.
-
-关闭本 PR，内容已完整包含在 #1000 中（这四个提交正是 #1000 分支的前四个提交）。
-```
+本 PR 的 4 个提交全部包含在 #1000 中，且单独编译不过（`code_style.dart` 等只存在于 #1000 的设置提交里）。
+关闭，改为在 #1000 里统一 review。
+````
 
 ### 补丁清单（`packaging/arch/pr/`）
 
