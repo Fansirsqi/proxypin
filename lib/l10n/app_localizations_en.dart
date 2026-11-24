@@ -141,6 +141,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themePrimary => 'Primary';
 
   @override
+  String get themeCreate => 'Save as theme';
+
+  @override
+  String get themeEdit => 'Edit theme';
+
+  @override
+  String get themeImport => 'Import theme';
+
+  @override
+  String get themeExport => 'Export theme';
+
+  @override
+  String get themeNameInUse => 'A theme with this name already exists.';
+
+  @override
+  String get themeInvalidName => 'Enter a valid theme name.';
+
+  @override
+  String get themeInvalidFile => 'Invalid theme file.';
+
+  @override
+  String get themeUnsupportedVersion => 'This theme file version is unsupported.';
+
+  @override
   String get themeSecondary => 'Secondary';
 
   @override
@@ -493,6 +517,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get domainList => 'Domain List';
+
+  @override
+  String get captureDomains => 'Domains';
+
+  @override
+  String get captureRequests => 'Requests';
 
   @override
   String get domainWhitelist => 'Proxy Domain Whitelist';

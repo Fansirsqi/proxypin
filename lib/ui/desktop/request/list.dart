@@ -67,6 +67,7 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
 
   // 选择控制器
   final MultiSelectController selectionController = MultiSelectController();
+  final ScrollController _selectionScrollController = ScrollController(keepScrollOffset: false);
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
@@ -87,6 +88,7 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
   void dispose() {
     RequestWidget.removeRowStatesByIds(container.map((request) => request.requestId));
     selectionController.clear();
+    _selectionScrollController.dispose();
     super.dispose();
   }
 
@@ -94,10 +96,15 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
   Widget build(BuildContext context) {
     super.build(context);
 
-    List<Tab> tabs = [
-      Tab(height: 30, child: Text(localizations.domainList, style: const TextStyle(fontSize: 12.5))),
-      Tab(height: 30, child: Text(localizations.sequence, style: const TextStyle(fontSize: 12.5))),
-    ];
+    final tabHeight = (MediaQuery.textScalerOf(context).scale(12.5) + 16).clamp(40.0, double.infinity);
+    final tabs = [localizations.captureDomains, localizations.captureRequests]
+        .map((label) => Tab(
+            height: tabHeight,
+            child: Tooltip(
+                message: label,
+                excludeFromSemantics: true,
+                child: Text(label, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis))))
+        .toList();
 
     return FocusableActionDetector(
         autofocus: true,
@@ -122,21 +129,23 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
               return Scaffold(
                   backgroundColor: Theme.of(context).colorScheme.surface,
                   appBar: AppBar(
-                    toolbarHeight: 40,
-                    title: SizedBox(height: 40, child: TabBar(tabs: tabs, dividerColor: Colors.transparent)),
+                    toolbarHeight: tabHeight,
+                    titleSpacing: 4,
+                    title: TabBar(
+                      tabs: tabs,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      labelStyle: const TextStyle(fontSize: 12.5),
+                      unselectedLabelStyle: const TextStyle(fontSize: 12.5),
+                      dividerColor: Colors.transparent,
+                    ),
                     automaticallyImplyLeading: false,
                     actions: [popupMenus()],
                   ),
                   body: Padding(
                       padding: const EdgeInsets.only(right: 2),
                       child: Column(children: [
-                        Obx(() => selectionController.selectionMode.value
-                            ? SelectionActionBar(
-                                selectionController: selectionController,
-                                onRepeat: repeatSelected,
-                                onExport: exportSelected,
-                                onDelete: deleteSelected)
-                            : SizedBox()),
+                        Search(key: searchKey, onSearch: search),
+                        Obx(() => selectionController.selectionMode.value ? _selectionActionBar() : const SizedBox()),
                         Expanded(
                             child: TabBarView(physics: const NeverScrollableScrollPhysics(), children: [
                           DomainList(
@@ -172,10 +181,32 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
                             },
                           ),
                         ])),
-                        // 搜索挪到底部（旧版位置）
-                        Search(key: searchKey, onSearch: search),
                       ])));
             })));
+  }
+
+  Widget _selectionActionBar() {
+    const scrollbarThickness = 8.0;
+    return LayoutBuilder(builder: (context, constraints) {
+      return Scrollbar(
+          controller: _selectionScrollController,
+          thumbVisibility: true,
+          trackVisibility: true,
+          interactive: true,
+          thickness: scrollbarThickness,
+          child: SingleChildScrollView(
+              controller: _selectionScrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(bottom: scrollbarThickness),
+              child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  child: IntrinsicWidth(
+                      child: SelectionActionBar(
+                          selectionController: selectionController,
+                          onRepeat: repeatSelected,
+                          onExport: exportSelected,
+                          onDelete: deleteSelected)))));
+    });
   }
 
   bool _isTextInputFocused() {

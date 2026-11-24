@@ -34,6 +34,7 @@ import 'package:proxypin/network/http/http_client.dart';
 import 'package:proxypin/ui/component/multi_select_controller.dart';
 import 'package:proxypin/ui/component/transition.dart';
 import 'package:proxypin/ui/component/utils.dart';
+import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/panel.dart';
 import 'package:proxypin/ui/desktop/request/request.dart';
 import 'package:proxypin/utils/har.dart';
@@ -547,7 +548,13 @@ class _DomainRequestsState extends State<DomainRequests> {
   //domain title（结构沿用旧版：Material 箭头 + 域名 + 右侧 app 图标；无底色无分割线。
   //Material+InkWell：hover/水波纹由组件自身处理，不再 setState 重建子树）
   Widget _hostWidget(String title) {
-    var theme = Theme.of(context);
+    final theme = Theme.of(context);
+    final density = AppDisplaySettings.of(context)?.captureListDensity;
+    final (height, arrowWidth, arrowSize, appIconSize) = switch (density) {
+      'dense' => (24.0, 18.0, 14.0, 14.0),
+      'compact' => (32.0, 22.0, 16.0, 18.0),
+      _ => (40.0, 25.0, 18.0, 23.0),
+    };
     var host = Material(
         color: Colors.transparent,
         child: InkWell(
@@ -559,24 +566,27 @@ class _DomainRequestsState extends State<DomainRequests> {
             },
             hoverColor: rowHoverColor(theme),
             child: Container(
-                height: 40,
-                padding: const EdgeInsets.only(left: 6, right: 10),
-            child: Row(children: [
-              SizedBox(
-                  width: 25,
-                  child: Icon(selected ? Icons.arrow_drop_down : Icons.arrow_right,
-                      size: 18, color: theme.colorScheme.onSurfaceVariant)),
-              Expanded(
-                  child: Text(title,
-                      textAlign: TextAlign.left,
-                      style: codeTextStyle(context,
-                          base: const TextStyle(fontWeight: FontWeight.normal, height: 1.2),
-                          size: 13,
-                          color: theme.colorScheme.onSurface),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis)),
-              if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-            ]))));
+                constraints: BoxConstraints(minHeight: height),
+                padding: const EdgeInsets.fromLTRB(6, 2, 10, 2),
+                child: Row(children: [
+                  SizedBox(
+                      width: arrowWidth,
+                      child: Icon(selected ? Icons.arrow_drop_down : Icons.arrow_right,
+                          size: arrowSize, color: theme.colorScheme.onSurfaceVariant)),
+                  Expanded(
+                      child: Text(title,
+                          textAlign: TextAlign.left,
+                          style: codeTextStyle(context,
+                              base: const TextStyle(fontWeight: FontWeight.normal, height: 1.2),
+                              size: 13,
+                              color: theme.colorScheme.onSurface),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis)),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    ConstrainedBox(constraints: BoxConstraints.loose(Size.square(appIconSize)), child: trailing!),
+                  ],
+                ]))));
 
     return ColorTransition(
         key: transitionState,

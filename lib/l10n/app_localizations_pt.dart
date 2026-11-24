@@ -141,6 +141,30 @@ class AppLocalizationsPt extends AppLocalizations {
   String get themePrimary => 'Primary';
 
   @override
+  String get themeCreate => 'Guardar como tema';
+
+  @override
+  String get themeEdit => 'Editar tema';
+
+  @override
+  String get themeImport => 'Importar tema';
+
+  @override
+  String get themeExport => 'Exportar tema';
+
+  @override
+  String get themeNameInUse => 'Já existe um tema com este nome.';
+
+  @override
+  String get themeInvalidName => 'Introduza um nome de tema válido.';
+
+  @override
+  String get themeInvalidFile => 'O ficheiro de tema é inválido.';
+
+  @override
+  String get themeUnsupportedVersion => 'Esta versão do ficheiro de tema não é suportada.';
+
+  @override
   String get themeSecondary => 'Secondary';
 
   @override
@@ -493,6 +517,12 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get domainList => 'Domain List';
+
+  @override
+  String get captureDomains => 'Domínios';
+
+  @override
+  String get captureRequests => 'Pedidos';
 
   @override
   String get domainWhitelist => 'Proxy Domain Whitelist';
@@ -1788,6 +1818,30 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
   String get themePrimary => 'Primária';
 
   @override
+  String get themeCreate => 'Salvar como tema';
+
+  @override
+  String get themeEdit => 'Editar tema';
+
+  @override
+  String get themeImport => 'Importar tema';
+
+  @override
+  String get themeExport => 'Exportar tema';
+
+  @override
+  String get themeNameInUse => 'Já existe um tema com esse nome.';
+
+  @override
+  String get themeInvalidName => 'Insira um nome de tema válido.';
+
+  @override
+  String get themeInvalidFile => 'O arquivo de tema é inválido.';
+
+  @override
+  String get themeUnsupportedVersion => 'Esta versão do arquivo de tema não é compatível.';
+
+  @override
   String get themeSecondary => 'Secundária';
 
   @override
@@ -2022,6 +2076,12 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get domainList => 'Lista de domínios';
+
+  @override
+  String get captureDomains => 'Domínios';
+
+  @override
+  String get captureRequests => 'Requisições';
 
   @override
   String get domainWhitelist => 'Lista branca de domínios';

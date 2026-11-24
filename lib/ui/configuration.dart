@@ -21,6 +21,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:proxypin/mcp/mcp_listen_options.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/saved_theme.dart';
 import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:proxypin/ui/component/utils.dart' show DarkPalette;
 import 'package:proxypin/utils/platform.dart';
@@ -60,6 +61,7 @@ class ThemeModel {
   String? surface;
   PaletteStyle style;
   ThemePreset preset;
+  SavedTheme? saved;
 
   ThemeModel({
     this.mode = ThemeMode.system,
@@ -110,10 +112,13 @@ class ThemeModel {
 
   Color get themeColor => parseColor(primary) ?? ColorMapping.getColor('Blue');
 
-  bool get usesClassicSurfaces => preset == ThemePreset.custom && style == PaletteStyle.classic && surface == null;
+  ThemePreset get activePreset => saved ?? preset;
+
+  bool get usesClassicSurfaces =>
+      activePreset == ThemePreset.custom && style == PaletteStyle.classic && surface == null;
 
   ColorScheme colorScheme(Brightness brightness) {
-    final colors = preset.colorScheme(brightness) ?? _customColorScheme(brightness);
+    final colors = palette(brightness);
     if (!useAmoled || brightness != Brightness.dark) return colors;
     return colors.copyWith(
       surface: Colors.black,
@@ -126,6 +131,8 @@ class ThemeModel {
       surfaceContainerHighest: Colors.black,
     );
   }
+
+  ColorScheme palette(Brightness brightness) => activePreset.colorScheme(brightness) ?? _customColorScheme(brightness);
 
   ColorScheme _customColorScheme(Brightness brightness) {
     ColorScheme fromSeed(Color seed, DynamicSchemeVariant variant) =>
@@ -238,12 +245,46 @@ typedef DetailLayout = ({
   HeaderDensity headers,
 });
 
+class _DetailPreferenceNotifier<T> extends ValueNotifier<T> {
+  _DetailPreferenceNotifier(super.value, this._encode, this._decode);
+
+  final Map<String, String> Function(T) _encode;
+  final T Function(Map<String, dynamic>) _decode;
+  final Map<String, int> _localRevisions = {};
+
+  Map<String, String> get preferences => _encode(value);
+
+  @override
+  set value(T next) {
+    if (next == value) return;
+    final previous = preferences;
+    for (final entry in _encode(next).entries) {
+      if (previous[entry.key] != entry.value) {
+        _localRevisions.update(entry.key, (revision) => revision + 1, ifAbsent: () => 1);
+      }
+    }
+    super.value = next;
+  }
+
+  void restore(Map<String, dynamic> config) => value = _decode(config);
+
+  void publish(Map<String, String> changes, Map<String, int> revisionsAtEnqueue) {
+    final merged = preferences;
+    merged.updateAll((key, value) {
+      if (revisionsAtEnqueue[key] != _localRevisions[key]) return value;
+      return changes[key] ?? value;
+    });
+    super.value = _decode(merged);
+  }
+}
+
 class AppConfiguration {
   static const String version = "1.4.0";
 
   ValueNotifier<bool> globalChange = ValueNotifier(false);
 
   ThemeModel _theme = ThemeModel();
+  final Map<String, SavedTheme> _savedThemes = {};
   Locale? _language;
 
   //是否显示更新内容公告
@@ -256,7 +297,13 @@ class AppConfiguration {
   ValueNotifier<bool> pipIcon = ValueNotifier(Platform.isAndroid);
 
   /// Headers展示模式: table(逐行) / text(原始文本)
-  final ValueNotifier<String> headerViewMode = ValueNotifier("table");
+  ValueNotifier<String> get headerViewMode => _headerViewMode;
+
+  final _headerViewMode = _DetailPreferenceNotifier<String>(
+    'table',
+    (mode) => {'headerViewMode': mode},
+    (config) => config['headerViewMode'] == 'text' ? 'text' : 'table',
+  );
 
   static const DetailLayout defaultDetailLayout = (
     tabs: DetailTabAlignment.left,
@@ -264,7 +311,30 @@ class AppConfiguration {
     headers: HeaderDensity.compact,
   );
 
-  final ValueNotifier<DetailLayout> detailLayout = ValueNotifier(defaultDetailLayout);
+  ValueNotifier<DetailLayout> get detailLayout => _detailLayout;
+
+  final _detailLayout = _DetailPreferenceNotifier<DetailLayout>(
+    defaultDetailLayout,
+    (layout) => {
+      'detailTabAlignment': layout.tabs.name,
+      'detailTabLabelAlignment': layout.labels.name,
+      'detailHeaderDensity': layout.headers.name,
+    },
+    (config) => (
+      tabs: DetailTabAlignment.values.firstWhere(
+        (value) => value.name == config['detailTabAlignment'],
+        orElse: () => defaultDetailLayout.tabs,
+      ),
+      labels: DetailTabLabelAlignment.values.firstWhere(
+        (value) => value.name == config['detailTabLabelAlignment'],
+        orElse: () => defaultDetailLayout.labels,
+      ),
+      headers: HeaderDensity.values.firstWhere(
+        (value) => value.name == config['detailHeaderDensity'],
+        orElse: () => defaultDetailLayout.headers,
+      ),
+    ),
+  );
 
   /// 底部导航栏
   bool bottomNavigation = true;
@@ -415,7 +485,12 @@ class AppConfiguration {
     flushConfig();
   }
 
-  AppConfiguration._();
+  final File? _configFile;
+
+  AppConfiguration._() : _configFile = null;
+
+  @visibleForTesting
+  AppConfiguration.withConfigFile(File configFile) : _configFile = configFile;
 
   /// 单例
   static AppConfiguration? _instance;
@@ -496,13 +571,54 @@ class AppConfiguration {
 
   ColorScheme colorScheme(Brightness brightness) => _theme.colorScheme(brightness);
 
-  ThemePreset get themePreset => _theme.preset;
+  ThemePreset get themePreset => _theme.activePreset;
 
   set themePreset(ThemePreset value) {
-    if (value == _theme.preset) return;
-    _theme.preset = value;
-    globalChange.value = !globalChange.value;
-    flushConfig();
+    if (value == themePreset) return;
+    if (value is SavedTheme && _savedThemes[_themeKey(value.name)] != value) return;
+    applyDisplaySetting(() {
+      _theme.saved = value is SavedTheme ? value : null;
+      if (value is! SavedTheme) _theme.preset = value;
+    });
+  }
+
+  static String _themeKey(String name) => name.toLowerCase();
+
+  List<SavedTheme> get savedThemes => List.unmodifiable(_savedThemes.values);
+
+  SavedTheme snapshotTheme(String name) => SavedTheme(
+        name: name,
+        light: _theme.palette(Brightness.light),
+        dark: _theme.palette(Brightness.dark),
+        lightString: themePreset.stringColor(Brightness.light),
+        darkString: themePreset.stringColor(Brightness.dark),
+      );
+
+  bool canSaveTheme(String name, {SavedTheme? replacing}) {
+    final existing = _savedThemes[_themeKey(name)];
+    return SavedTheme.isValidName(name) &&
+        (existing == null || existing == replacing) &&
+        (replacing == null || _savedThemes[_themeKey(replacing.name)] == replacing);
+  }
+
+  Future<bool> saveTheme(SavedTheme theme, {SavedTheme? replacing}) {
+    _pendingFlush = null;
+    return _enqueueConfigWrite(() async {
+      if (!canSaveTheme(theme.name, replacing: replacing)) return false;
+      final themes = Map.of(_savedThemes);
+      final key = _themeKey(theme.name);
+      if (replacing != null && _themeKey(replacing.name) != key) {
+        themes.remove(_themeKey(replacing.name));
+      }
+      themes[key] = theme;
+      await writeConfig(_configJson(themes.values, theme));
+      _savedThemes
+        ..clear()
+        ..addAll(themes);
+      _theme.saved = theme;
+      globalChange.value = !globalChange.value;
+      return true;
+    });
   }
 
   bool get usesClassicSurfaces => _theme.usesClassicSurfaces;
@@ -516,10 +632,21 @@ class AppConfiguration {
     flushConfig();
   }
 
-  Map<String, dynamic> get themeSettings => _theme.toJson();
+  Map<String, dynamic> get themeSettings => {
+        ..._theme.toJson(),
+        if (_theme.saved case final saved?) 'activeSavedTheme': saved.encoded,
+      };
 
   void applyThemeSettings(Map<dynamic, dynamic> settings) {
-    _theme = ThemeModel.fromJson(settings);
+    final theme = ThemeModel.fromJson(settings);
+    if (settings['activeSavedTheme'] case final String encoded) {
+      try {
+        theme.saved = SavedTheme.decode(encoded);
+      } on FormatException {
+        return;
+      }
+    }
+    _theme = theme;
     globalChange.value = !globalChange.value;
   }
 
@@ -534,17 +661,14 @@ class AppConfiguration {
   }
 
   Future<File> get _path async {
+    if (_configFile case final file?) return file;
     if (Platforms.isDesktop()) {
       var userHome = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
       return File('$userHome${Platform.pathSeparator}.proxypin${Platform.pathSeparator}ui_config.json');
     }
 
     final directory = await getApplicationSupportDirectory();
-    var file = File('${directory.path}${Platform.pathSeparator}ui_config.json');
-    if (!await file.exists()) {
-      await file.create();
-    }
-    return file;
+    return File('${directory.path}${Platform.pathSeparator}ui_config.json');
   }
 
   /// 初始化配置
@@ -564,6 +688,20 @@ class AppConfiguration {
     try {
       Map<String, dynamic> config = jsonDecode(json);
       _theme = ThemeModel.fromJson(config);
+      _savedThemes.clear();
+      if (config['savedThemes'] case final List entries) {
+        for (final entry in entries) {
+          try {
+            final saved = SavedTheme.fromJson(entry);
+            _savedThemes.putIfAbsent(_themeKey(saved.name), () => saved);
+          } on FormatException {
+            continue;
+          }
+        }
+      }
+      if (config['activeSavedThemeName'] case final String name) {
+        _theme.saved = _savedThemes[_themeKey(name)];
+      }
 
       upgradeNoticeV40 = config['upgradeNoticeV40'] ?? true;
       _language = config['language'] == null
@@ -571,21 +709,8 @@ class AppConfiguration {
           : Locale.fromSubtags(languageCode: config['language'], scriptCode: config['languageScript']);
       pipEnabled.value = config['pipEnabled'] ?? true;
       pipIcon.value = config['pipIcon'] ?? false;
-      headerViewMode.value = config['headerViewMode'] == 'text' ? 'text' : 'table';
-      detailLayout.value = (
-        tabs: DetailTabAlignment.values.firstWhere(
-          (value) => value.name == config['detailTabAlignment'],
-          orElse: () => defaultDetailLayout.tabs,
-        ),
-        labels: DetailTabLabelAlignment.values.firstWhere(
-          (value) => value.name == config['detailTabLabelAlignment'],
-          orElse: () => defaultDetailLayout.labels,
-        ),
-        headers: HeaderDensity.values.firstWhere(
-          (value) => value.name == config['detailHeaderDensity'],
-          orElse: () => defaultDetailLayout.headers,
-        ),
-      );
+      _headerViewMode.restore(config);
+      _detailLayout.restore(config);
       bottomNavigation = config['bottomNavigation'] ?? true;
       memoryCleanupThreshold = config['memoryCleanupThreshold'];
       autoReadEnabled = config['autoReadEnabled'] ?? true;
@@ -636,41 +761,112 @@ class AppConfiguration {
     }
   }
 
-  /// 是否正在写入
-  bool _isWriting = false;
-  bool _writePending = false;
+  Future<void> _writeQueue = Future<void>.value();
+  Future<void>? _pendingFlush;
+  Future<void> Function(Map<String, String>)? _forwardDetailPreferences;
+  Map<String, String> _lastSavedDetailPreferences = {};
+
+  void forwardDetailPreferences(Future<void> Function(Map<String, String>) send) {
+    _lastSavedDetailPreferences = _detailPreferences;
+    _forwardDetailPreferences = send;
+  }
+
+  Map<String, String> get _detailPreferences => {
+        ..._headerViewMode.preferences,
+        ..._detailLayout.preferences,
+      };
+
+  Future<void> saveWindowDetailPreferences(Map<dynamic, dynamic> changes) async {
+    final preferences = <String, String>{};
+    for (final entry in changes.entries) {
+      final valid = switch (entry.key) {
+        'headerViewMode' => entry.value == 'table' || entry.value == 'text',
+        'detailTabAlignment' => DetailTabAlignment.values.any((value) => value.name == entry.value),
+        'detailTabLabelAlignment' => DetailTabLabelAlignment.values.any((value) => value.name == entry.value),
+        'detailHeaderDensity' => HeaderDensity.values.any((value) => value.name == entry.value),
+        _ => false,
+      };
+      if (!valid) throw FormatException('Invalid detail preference: ${entry.key}');
+      preferences[entry.key as String] = entry.value as String;
+    }
+    if (preferences.isEmpty) return;
+
+    final revisionsAtEnqueue = {
+      ..._headerViewMode._localRevisions,
+      ..._detailLayout._localRevisions,
+    };
+    _pendingFlush = null;
+    await _enqueueConfigWrite(() async {
+      await writeConfig({...toJson(), ...preferences});
+      _headerViewMode.publish(preferences, revisionsAtEnqueue);
+      _detailLayout.publish(preferences, revisionsAtEnqueue);
+    });
+  }
+
+  Future<T> _enqueueConfigWrite<T>(Future<T> Function() operation) {
+    final result = _writeQueue.then((_) => operation());
+    _writeQueue = result.then<void>((_) {}, onError: (Object error, StackTrace stackTrace) {
+      logger.e('Failed to write UI configuration', error: error, stackTrace: stackTrace);
+    });
+    return result;
+  }
 
   /// 刷新配置文件
-  Future<void> flushConfig() async {
-    _writePending = true;
-    if (_isWriting) return;
-    _isWriting = true;
+  Future<void> flushConfig() {
+    if (_pendingFlush case final pending?) return pending;
+    late final Future<void> operation;
+    operation = _enqueueConfigWrite(() async {
+      if (identical(_pendingFlush, operation)) _pendingFlush = null;
+      final send = _forwardDetailPreferences;
+      if (send == null) {
+        await writeConfig(toJson());
+        return;
+      }
+      final changes = {
+        for (final entry in _detailPreferences.entries)
+          if (_lastSavedDetailPreferences[entry.key] != entry.value) entry.key: entry.value,
+      };
+      if (changes.isEmpty) return;
+      await send(changes);
+      _lastSavedDetailPreferences.addAll(changes);
+    });
+    return _pendingFlush = operation;
+  }
 
+  @protected
+  Future<void> writeConfig(Map<String, dynamic> config) async {
+    if (_forwardDetailPreferences != null) throw StateError('Only the main window can write UI configuration');
+    var file = await _path;
+    if (await FileSystemEntity.isLink(file.path)) {
+      file = File(await file.resolveSymbolicLinks());
+    }
+    await file.parent.create(recursive: true);
+    final temporary = await file.parent.createTemp('.ui-config-');
     try {
-      var file = await _path;
-      if (!await file.exists()) {
-        file = await file.create(recursive: true);
-      }
-
-      while (_writePending) {
-        _writePending = false;
-        await file.writeAsString(jsonEncode(toJson()));
-      }
+      final staged = File('${temporary.path}${Platform.pathSeparator}ui_config.json');
+      if (await file.exists()) await file.copy(staged.path);
+      await staged.writeAsString(jsonEncode(config), flush: true);
+      await staged.rename(file.path);
     } finally {
-      _isWriting = false;
+      try {
+        await temporary.delete(recursive: true);
+      } on FileSystemException catch (error) {
+        logger.w('Failed to remove temporary UI configuration directory', error: error);
+      }
     }
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toJson() => _configJson(_savedThemes.values, _theme.saved);
+
+  Map<String, dynamic> _configJson(Iterable<SavedTheme> themes, SavedTheme? active) {
     return {
       ..._theme.toJson(),
+      if (themes.isNotEmpty) 'savedThemes': [for (final saved in themes) saved.toJson()],
+      if (active != null) 'activeSavedThemeName': active.name,
       'upgradeNoticeV40': upgradeNoticeV40,
       "language": _language?.languageCode,
       "languageScript": _language?.scriptCode,
-      "headerViewMode": headerViewMode.value,
-      "detailTabAlignment": detailLayout.value.tabs.name,
-      "detailTabLabelAlignment": detailLayout.value.labels.name,
-      "detailHeaderDensity": detailLayout.value.headers.name,
+      ..._detailPreferences,
       "autoReadEnabled": autoReadEnabled,
       "clearConfirm": clearConfirm,
       "captureListDensity": captureListDensity,

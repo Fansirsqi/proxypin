@@ -225,11 +225,13 @@ class _RequestWidgetState extends State<RequestWidget> {
                     Icon(Icons.check_box_outlined, size: metrics.iconWidth, color: theme.colorScheme.primary),
                     const SizedBox(width: 4),
                   ],
-                  getIcon(response,
-                      color: requestColor,
-                      width: metrics.iconWidth,
-                      size: metrics.iconSize,
-                      imageWidth: metrics.imageSize),
+                  ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: metrics.imageSize),
+                      child: getIcon(response,
+                          color: requestColor,
+                          width: metrics.iconWidth,
+                          size: metrics.iconSize,
+                          imageWidth: metrics.imageSize)),
                   SizedBox(width: metrics.iconGap),
                   Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -262,7 +264,12 @@ class _RequestWidgetState extends State<RequestWidget> {
                           ])),
                     ],
                   ])),
-                  if (widget.trailing != null) ...[const SizedBox(width: 8), widget.trailing!],
+                  if (widget.trailing != null) ...[
+                    const SizedBox(width: 8),
+                    ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: 23, maxHeight: metrics.imageSize),
+                        child: widget.trailing!),
+                  ],
                 ]))));
   }
 

@@ -370,6 +370,54 @@ abstract class AppLocalizations {
   /// **'Primary'**
   String get themePrimary;
 
+  /// No description provided for @themeCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Save as theme'**
+  String get themeCreate;
+
+  /// No description provided for @themeEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit theme'**
+  String get themeEdit;
+
+  /// No description provided for @themeImport.
+  ///
+  /// In en, this message translates to:
+  /// **'Import theme'**
+  String get themeImport;
+
+  /// No description provided for @themeExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export theme'**
+  String get themeExport;
+
+  /// No description provided for @themeNameInUse.
+  ///
+  /// In en, this message translates to:
+  /// **'A theme with this name already exists.'**
+  String get themeNameInUse;
+
+  /// No description provided for @themeInvalidName.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid theme name.'**
+  String get themeInvalidName;
+
+  /// No description provided for @themeInvalidFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Invalid theme file.'**
+  String get themeInvalidFile;
+
+  /// No description provided for @themeUnsupportedVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'This theme file version is unsupported.'**
+  String get themeUnsupportedVersion;
+
   /// No description provided for @themeSecondary.
   ///
   /// In en, this message translates to:
@@ -1071,6 +1119,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Domain List'**
   String get domainList;
+
+  /// No description provided for @captureDomains.
+  ///
+  /// In en, this message translates to:
+  /// **'Domains'**
+  String get captureDomains;
+
+  /// No description provided for @captureRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests'**
+  String get captureRequests;
 
   /// No description provided for @domainWhitelist.
   ///

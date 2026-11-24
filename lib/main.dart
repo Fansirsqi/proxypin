@@ -67,6 +67,7 @@ void main(List<String> args) async {
         windowArguments.isEmpty ? <String, dynamic>{} : jsonDecode(windowArguments) as Map<String, dynamic>;
     DesktopMultiWindow.initializeFromArguments(argument);
     var appConfiguration = await instance;
+    appConfiguration.forwardDetailPreferences(DesktopMultiWindow.saveDetailPreferences);
     DesktopMultiWindow.onThemeChanged = appConfiguration.applyThemeSettings;
     if (DesktopMultiWindow.themeSettings case final settings?) {
       appConfiguration.applyThemeSettings(settings);
@@ -105,6 +106,7 @@ void main(List<String> args) async {
 
   var appConfiguration = await instance;
   if (Platforms.isDesktop()) {
+    DesktopMultiWindow.onSaveDetailPreferences = appConfiguration.saveWindowDetailPreferences;
     await DesktopSupport.initialize(appConfiguration);
     Map<String, dynamic>? lastTheme;
     void syncTheme() {

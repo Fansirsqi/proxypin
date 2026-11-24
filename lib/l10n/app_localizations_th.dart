@@ -141,6 +141,30 @@ class AppLocalizationsTh extends AppLocalizations {
   String get themePrimary => 'สีหลัก';
 
   @override
+  String get themeCreate => 'บันทึกเป็นธีม';
+
+  @override
+  String get themeEdit => 'แก้ไขธีม';
+
+  @override
+  String get themeImport => 'นำเข้าธีม';
+
+  @override
+  String get themeExport => 'ส่งออกธีม';
+
+  @override
+  String get themeNameInUse => 'มีธีมชื่อนี้อยู่แล้ว';
+
+  @override
+  String get themeInvalidName => 'ป้อนชื่อธีมที่ถูกต้อง';
+
+  @override
+  String get themeInvalidFile => 'ไฟล์ธีมไม่ถูกต้อง';
+
+  @override
+  String get themeUnsupportedVersion => 'ไม่รองรับไฟล์ธีมเวอร์ชันนี้';
+
+  @override
   String get themeSecondary => 'สีรอง';
 
   @override
@@ -493,6 +517,12 @@ class AppLocalizationsTh extends AppLocalizations {
 
   @override
   String get domainList => 'รายการโดเมน';
+
+  @override
+  String get captureDomains => 'โดเมน';
+
+  @override
+  String get captureRequests => 'คำขอ';
 
   @override
   String get domainWhitelist => 'บัญชีขาวโดเมน';

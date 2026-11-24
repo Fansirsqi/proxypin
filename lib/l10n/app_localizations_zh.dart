@@ -141,6 +141,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themePrimary => '主色';
 
   @override
+  String get themeCreate => '存为主题';
+
+  @override
+  String get themeEdit => '编辑主题';
+
+  @override
+  String get themeImport => '导入主题';
+
+  @override
+  String get themeExport => '导出主题';
+
+  @override
+  String get themeNameInUse => '已有同名主题。';
+
+  @override
+  String get themeInvalidName => '请输入有效的主题名称。';
+
+  @override
+  String get themeInvalidFile => '主题文件格式无效。';
+
+  @override
+  String get themeUnsupportedVersion => '此主题文件的版本暂不支持。';
+
+  @override
   String get themeSecondary => '辅助色';
 
   @override
@@ -492,6 +516,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get domainList => '域名列表';
+
+  @override
+  String get captureDomains => '域名';
+
+  @override
+  String get captureRequests => '请求';
 
   @override
   String get domainWhitelist => '代理域名白名单';
@@ -1774,6 +1804,30 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get themePrimary => '主色';
 
   @override
+  String get themeCreate => '儲存為主題';
+
+  @override
+  String get themeEdit => '編輯主題';
+
+  @override
+  String get themeImport => '匯入主題';
+
+  @override
+  String get themeExport => '匯出主題';
+
+  @override
+  String get themeNameInUse => '已有同名主題。';
+
+  @override
+  String get themeInvalidName => '請輸入有效的主題名稱。';
+
+  @override
+  String get themeInvalidFile => '主題檔案格式無效。';
+
+  @override
+  String get themeUnsupportedVersion => '此主題檔案的版本暫不支援。';
+
+  @override
   String get themeSecondary => '輔助色';
 
   @override
@@ -2119,6 +2173,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get domainList => '網域名稱列表';
+
+  @override
+  String get captureDomains => '網域';
+
+  @override
+  String get captureRequests => '請求';
 
   @override
   String get domainWhitelist => '代理網域名稱白名單';

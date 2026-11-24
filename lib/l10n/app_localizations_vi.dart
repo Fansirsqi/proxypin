@@ -141,6 +141,30 @@ class AppLocalizationsVi extends AppLocalizations {
   String get themePrimary => 'Màu chính';
 
   @override
+  String get themeCreate => 'Lưu thành chủ đề';
+
+  @override
+  String get themeEdit => 'Chỉnh sửa chủ đề';
+
+  @override
+  String get themeImport => 'Nhập chủ đề';
+
+  @override
+  String get themeExport => 'Xuất chủ đề';
+
+  @override
+  String get themeNameInUse => 'Đã có chủ đề dùng tên này.';
+
+  @override
+  String get themeInvalidName => 'Nhập tên chủ đề hợp lệ.';
+
+  @override
+  String get themeInvalidFile => 'Tệp chủ đề không hợp lệ.';
+
+  @override
+  String get themeUnsupportedVersion => 'Phiên bản tệp chủ đề này không được hỗ trợ.';
+
+  @override
   String get themeSecondary => 'Màu phụ';
 
   @override
@@ -493,6 +517,12 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get domainList => 'Danh sách miền';
+
+  @override
+  String get captureDomains => 'Miền';
+
+  @override
+  String get captureRequests => 'Yêu cầu';
 
   @override
   String get domainWhitelist => 'Danh sách trắng miền';

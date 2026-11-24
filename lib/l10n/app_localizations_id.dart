@@ -141,6 +141,30 @@ class AppLocalizationsId extends AppLocalizations {
   String get themePrimary => 'Utama';
 
   @override
+  String get themeCreate => 'Simpan sebagai tema';
+
+  @override
+  String get themeEdit => 'Edit tema';
+
+  @override
+  String get themeImport => 'Impor tema';
+
+  @override
+  String get themeExport => 'Ekspor tema';
+
+  @override
+  String get themeNameInUse => 'Tema dengan nama ini sudah ada.';
+
+  @override
+  String get themeInvalidName => 'Masukkan nama tema yang valid.';
+
+  @override
+  String get themeInvalidFile => 'Berkas tema tidak valid.';
+
+  @override
+  String get themeUnsupportedVersion => 'Versi berkas tema ini tidak didukung.';
+
+  @override
   String get themeSecondary => 'Sekunder';
 
   @override
@@ -493,6 +517,12 @@ class AppLocalizationsId extends AppLocalizations {
 
   @override
   String get domainList => 'Daftar domain';
+
+  @override
+  String get captureDomains => 'Domain';
+
+  @override
+  String get captureRequests => 'Permintaan';
 
   @override
   String get domainWhitelist => 'Daftar putih domain';

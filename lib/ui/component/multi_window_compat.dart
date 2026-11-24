@@ -22,10 +22,12 @@ class DesktopMultiWindow {
   static const String _argumentsKey = '__arguments';
   static const String _themeKey = '__theme';
   static const String _themeMethod = 'applyTheme';
+  static const String _saveDetailPreferencesMethod = 'saveDetailPreferences';
   static const String _mainWindowChannelName = 'proxypin/main_window';
   static const String standaloneWindowArgument = 'standalone_window';
   static const String _standaloneRequestPrefix = 'proxypin:tool:';
   static const _standaloneMethods = {
+    _saveDetailPreferencesMethod,
     'getProxyInfo',
     'getReplayTasks',
     'updateReplayTask',
@@ -61,6 +63,7 @@ class DesktopMultiWindow {
   static bool _standaloneDisconnected = false;
   static Map<dynamic, dynamic>? _themeSettings;
   static void Function(Map<dynamic, dynamic>)? onThemeChanged;
+  static Future<void> Function(Map<dynamic, dynamic>)? onSaveDetailPreferences;
   static void Function(String)? onStandaloneClosed;
 
   static String? get currentWindowId => _currentWindowId;
@@ -135,11 +138,10 @@ class DesktopMultiWindow {
       try {
         final request = jsonDecode(line.substring(_standaloneRequestPrefix.length)) as Map<String, dynamic>;
         final method = request['method'] as String;
-        final handler = _handler;
-        if (handler == null || !_standaloneMethods.contains(method)) {
+        if (_handler == null || !_standaloneMethods.contains(method)) {
           throw UnsupportedError(method);
         }
-        final result = await handler(MethodCall(method, request['arguments']), id);
+        final result = await _dispatchMethodCall(MethodCall(method, request['arguments']), id);
         process.stdin.writeln(jsonEncode({'result': result}));
       } catch (error) {
         process.stdin.writeln(jsonEncode({'error': error.toString()}));
@@ -326,6 +328,15 @@ class DesktopMultiWindow {
     });
   }
 
+  static Future<void> saveDetailPreferences(Map<String, String> changes) {
+    Future<void> save() async {
+      final saved = await invokeMainWindowMethod<bool>(_saveDetailPreferencesMethod, changes);
+      if (saved != true) throw StateError('Main window did not save detail preferences');
+    }
+
+    return isStandalone ? saveStandaloneChanges(save) : save();
+  }
+
   static Future<T?> invokeMethod<T>(Object windowId, String method, [dynamic arguments]) async {
     if (windowId.toString() == '0') {
       return invokeMainWindowMethod<T>(method, arguments);
@@ -361,12 +372,22 @@ class DesktopMultiWindow {
   static Future<dynamic> _handleMethodCall(MethodCall call) async {
     final arguments = call.arguments;
     if (arguments is Map && arguments.containsKey(_argumentsKey)) {
-      return _handler?.call(
+      return _dispatchMethodCall(
         MethodCall(call.method, arguments[_argumentsKey]),
         arguments[_fromWindowIdKey]?.toString() ?? '',
       );
     }
-    return _handler?.call(call, '');
+    return _dispatchMethodCall(call, '');
+  }
+
+  static Future<dynamic> _dispatchMethodCall(MethodCall call, String fromWindowId) async {
+    if (call.method == _saveDetailPreferencesMethod) {
+      final save = onSaveDetailPreferences;
+      if (save == null) throw StateError('Main window cannot save detail preferences');
+      await save(call.arguments as Map);
+      return true;
+    }
+    return _handler?.call(call, fromWindowId);
   }
 
   static Future<String> _withWindowContext(String arguments, {String? title, Size? size}) async {
