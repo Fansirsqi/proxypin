@@ -38,7 +38,7 @@ class HighlightTextWidget extends StatelessWidget {
 
         return SelectableText.rich(
           TextSpan(children: spans),
-          // style: style,
+          style: style,
           showCursor: true,
           // selectionColor: highlightSelectionColor(context),
           contextMenuBuilder: contextMenuBuilder,

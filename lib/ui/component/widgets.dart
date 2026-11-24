@@ -170,31 +170,23 @@ class LazyIndexedStack extends StatefulWidget {
 }
 
 class _LazyIndexedStackState extends State<LazyIndexedStack> {
-  final List<Widget?> _childrenCache = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _childrenCache.length = widget.children.length;
-  }
+  final Set<int> _visited = {};
 
   @override
   void didUpdateWidget(LazyIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.children.length != widget.children.length) {
-      _childrenCache.length = widget.children.length;
-    }
+    _visited.removeWhere((index) => index >= widget.children.length);
   }
 
   @override
   Widget build(BuildContext context) {
-    _childrenCache[widget.index] ??= widget.children[widget.index];
+    _visited.add(widget.index);
 
     return IndexedStack(
       index: widget.index,
       children: List.generate(
         widget.children.length,
-        (i) => _childrenCache[i] ?? Container(),
+        (i) => _visited.contains(i) ? widget.children[i] : const SizedBox.shrink(),
       ),
     );
   }

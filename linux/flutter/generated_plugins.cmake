@@ -5,6 +5,8 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
   flutter_js
+  media_kit_libs_linux
+  media_kit_video
   proxy_manager
   screen_retriever_linux
   tray_manager

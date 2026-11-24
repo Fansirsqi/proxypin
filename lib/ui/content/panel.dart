@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
+import 'package:flutter/gestures.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,21 +25,21 @@ import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/channel/host_port.dart';
-import 'package:proxypin/network/http/content_type.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/http_client.dart';
 import 'package:proxypin/storage/favorites.dart';
-import 'package:proxypin/ui/component/json/json_text.dart';
-import 'package:proxypin/ui/component/json/theme.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
+import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/web_socket.dart';
 import 'package:proxypin/ui/content/mqtt.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/platform.dart';
 
 import 'body.dart';
+import 'detail_fields.dart';
+import 'detail_settings.dart';
 import 'headers.dart';
 import 'menu.dart';
 
@@ -52,6 +53,7 @@ class NetworkTabController extends StatefulWidget {
   final ValueWrap<HttpResponse> response = ValueWrap();
   final Widget? title;
   final TextStyle? tabStyle;
+  final bool showLayoutSettings;
 
   /// 初始选中的 tab 下标（默认 0 = 概览）
   final int initialTab;
@@ -63,6 +65,7 @@ class NetworkTabController extends StatefulWidget {
       this.tabStyle,
       this.proxyServer,
       this.windowId,
+      this.showLayoutSettings = true,
       this.initialTab = 0})
       : super(key: GlobalKey<NetworkTabState>()) {
     currentKey = key as GlobalKey<NetworkTabState>;
@@ -107,11 +110,15 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
   late List<String> tabs;
   late bool _mqttTabs;
 
-  final TextStyle textStyle = const TextStyle(fontSize: 14);
+  static const double _detailTitleHeight = 40;
   late TabController _tabController;
+  late int _activeTab;
+  final _requestScrollController = ScrollController();
+  final _responseScrollController = ScrollController();
 
   final GlobalKey<HttpBodyState> requestHttpBodyKey = GlobalKey<HttpBodyState>();
   final GlobalKey<HttpBodyState> responseHttpBodyKey = GlobalKey<HttpBodyState>();
+  final GlobalKey<HttpBodyState> overviewHttpBodyKey = GlobalKey<HttpBodyState>();
 
   /// 当前请求的手动收藏状态，按 requestId 缓存避免每次 build 查存储
   String? _favoritedId;
@@ -168,7 +175,13 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
     tabs = mqtt ? ['General', 'MQTT'] : ['General', 'Request', 'Response', 'Cookies'];
     _tabController =
         TabController(length: tabs.length, vsync: this, initialIndex: widget.initialTab.clamp(0, tabs.length - 1));
+    _activeTab = _tabController.index;
     _tabController.addListener(() {
+      if (_activeTab == _tabController.index) return;
+      setState(() => _activeTab = _tabController.index);
+      if (_activeTab != 0) {
+        overviewHttpBodyKey.currentState?.hideSearchOverlay();
+      }
       if (_tabController.index != 1) {
         requestHttpBodyKey.currentState?.hideSearchOverlay();
       }
@@ -193,6 +206,8 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
   @override
   void dispose() {
     _tabController.dispose();
+    _requestScrollController.dispose();
+    _responseScrollController.dispose();
     HardwareKeyboard.instance.removeHandler(onKeyEvent);
     super.dispose();
   }
@@ -210,6 +225,17 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
 
   @override
   Widget build(BuildContext context) {
+    final configuration = AppConfiguration.current;
+    if (configuration == null) {
+      return _buildDetail(context, AppConfiguration.defaultDetailLayout);
+    }
+    return ValueListenableBuilder(
+      valueListenable: configuration.detailLayout,
+      builder: (context, layout, _) => _buildDetail(context, layout, configuration: configuration),
+    );
+  }
+
+  Widget _buildDetail(BuildContext context, DetailLayout layout, {AppConfiguration? configuration}) {
     bool isMqtt = widget.request.get()?.protocolVersion == 'MQTT';
     bool isWebSocket = widget.request.get()?.isWebSocket == true;
     bool isSse = widget.response.get()?.headers.contentType.toLowerCase().startsWith('text/event-stream') == true;
@@ -224,77 +250,105 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
       tabs[tabs.length - 1] = 'Cookies';
     }
 
-    var isDesktop = Platforms.isDesktop();
-    var tabBar = TabBar(
-      padding: const EdgeInsets.only(bottom: 0),
+    final isDesktop = Platforms.isDesktop();
+    final theme = Theme.of(context);
+    final tabStyle = theme.textTheme.labelLarge?.merge(widget.tabStyle);
+    final tabHeight = isDesktop ? MediaQuery.textScalerOf(context).scale(tabStyle?.fontSize ?? 14) + 20 : null;
+    final labelAlignment = switch (layout.labels) {
+      DetailTabLabelAlignment.top => Alignment.topCenter,
+      DetailTabLabelAlignment.center => Alignment.center,
+      DetailTabLabelAlignment.bottom => Alignment.bottomCenter,
+    };
+    final tabBar = TabBar(
       controller: _tabController,
-      isScrollable: isDesktop, // 桌面左对齐紧凑排列，手机均分
+      isScrollable: isDesktop,
       tabAlignment: isDesktop ? TabAlignment.start : null,
-      dividerColor: Theme.of(context).dividerColor,
-      labelPadding: EdgeInsets.symmetric(horizontal: isDesktop ? 24 : 10),
-      // 设计稿 .tab：12.5px，选中 primary 加粗，未选中 text-2
-      labelStyle: widget.tabStyle ?? (isDesktop ? const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500) : null),
-      unselectedLabelStyle:
-          widget.tabStyle ?? (isDesktop ? const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w400) : null),
-      unselectedLabelColor: isDesktop ? Theme.of(context).colorScheme.onSurfaceVariant : null,
-      tabs: tabs
-          .map((title) =>
-              Tab(height: isDesktop ? 34 : null, child: Text(tabLabel(title), style: widget.tabStyle, maxLines: 1)))
-          .toList(),
+      dividerHeight: isDesktop ? 0 : null,
+      labelPadding: EdgeInsets.symmetric(horizontal: isDesktop ? 13 : 10),
+      labelStyle: isDesktop ? tabStyle?.copyWith(fontWeight: FontWeight.w600) : widget.tabStyle,
+      unselectedLabelStyle: isDesktop ? tabStyle?.copyWith(fontWeight: FontWeight.w400) : widget.tabStyle,
+      unselectedLabelColor: isDesktop ? theme.colorScheme.onSurfaceVariant : null,
+      tabs: [
+        for (final title in tabs)
+          Tab(
+            height: tabHeight,
+            child: isDesktop
+                ? Align(
+                    alignment: labelAlignment,
+                    widthFactor: 1,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(tabLabel(title), maxLines: 1),
+                    ),
+                  )
+                : Text(tabLabel(title), maxLines: 1),
+          ),
+      ],
     );
+    final tabPosition = switch (layout.tabs) {
+      DetailTabAlignment.left => Alignment.centerLeft,
+      DetailTabAlignment.center => Alignment.center,
+      DetailTabAlignment.right => Alignment.centerRight,
+    };
+    final scrollBehavior = ScrollConfiguration.of(context);
+    final PreferredSizeWidget tabStrip = isDesktop
+        ? PreferredSize(
+            preferredSize: tabBar.preferredSize,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: theme.dividerColor)),
+              ),
+              child: Align(
+                alignment: tabPosition,
+                child: ScrollConfiguration(
+                  behavior: scrollBehavior.copyWith(
+                    dragDevices: {...scrollBehavior.dragDevices, PointerDeviceKind.mouse},
+                  ),
+                  child: tabBar,
+                ),
+              ),
+            ),
+          )
+        : tabBar;
+    final layoutButton = isDesktop && widget.showLayoutSettings && configuration != null
+        ? DetailLayoutSettings.menu(configuration: configuration)
+        : null;
 
     PreferredSizeWidget appBar;
     if (widget.title != null) {
       appBar = AppBar(
         title: widget.title,
-        bottom: tabBar,
+        bottom: tabStrip,
         centerTitle: true,
         actions: [
-          ShareWidget(
-              proxyServer: widget.proxyServer, request: widget.request.get(), response: widget.response.get()),
+          ShareWidget(proxyServer: widget.proxyServer, request: widget.request.get(), response: widget.response.get()),
           const SizedBox(width: 3),
           DetailMenuWidget(request: widget.request.get()),
+          if (layoutButton != null) layoutButton,
           const SizedBox(width: 10),
         ],
       );
-    } else if (widget.windowId == null && Platforms.isDesktop()) {
-      var request = widget.request.get();
-      if (request == null) {
-        // 未选中请求：不展示标题栏和 tab 条，右侧面板留白
-        appBar = const PreferredSize(preferredSize: Size.zero, child: SizedBox());
-      } else {
-        appBar = PreferredSize(
-            preferredSize: const Size.fromHeight(kTextTabBarHeight + 44),
-            child: Material(
-                color: Theme.of(context).colorScheme.surface,
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  detailTitleBar(request),
-                  tabBar,
-                ])));
-      }
-    } else if (Platforms.isDesktop()) {
+    } else if (isDesktop) {
       // 桌面子窗口：同主窗口详情，URL 标题栏 + tab 条；
       // URL 栏同时把 tab 条压到 macOS 红绿灯（隐藏式标题栏，悬浮在左上约 72px）之下，
       // 标题栏自身内容也要右移避开红绿灯
       var request = widget.request.get();
       if (request == null) {
-        appBar = PreferredSize(
-            preferredSize: tabBar.preferredSize,
-            child: Material(color: Theme.of(context).colorScheme.surface, child: tabBar));
+        appBar = widget.windowId == null ? const PreferredSize(preferredSize: Size.zero, child: SizedBox()) : tabStrip;
       } else {
         appBar = PreferredSize(
-            preferredSize: const Size.fromHeight(kTextTabBarHeight + 44),
+            preferredSize: Size.fromHeight(tabStrip.preferredSize.height + _detailTitleHeight),
             child: Material(
-                color: Theme.of(context).colorScheme.surface,
+                color: theme.colorScheme.surface,
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Padding(
-                      padding: EdgeInsets.only(left: Platform.isMacOS ? 72 : 0),
-                      child: detailTitleBar(request)),
-                  tabBar,
+                      padding: EdgeInsets.only(left: widget.windowId != null && Platform.isMacOS ? 72 : 0),
+                      child: detailTitleBar(request, layoutButton)),
+                  tabStrip,
                 ])));
       }
     } else {
-      appBar = tabBar;
+      appBar = tabStrip;
     }
 
     return Scaffold(
@@ -303,80 +357,66 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
       backgroundColor: isDesktop ? Theme.of(context).colorScheme.surface : null,
       appBar: appBar,
       body: Padding(
-          padding: EdgeInsets.only(
-              left: isDesktop ? 16 : 20, right: isDesktop ? 16 : 20, top: isDesktop ? 14 : 10),
+          padding: isDesktop ? EdgeInsets.zero : const EdgeInsets.fromLTRB(20, 10, 20, 0),
           child: isDesktop && widget.request.get() == null
               ? const SizedBox() // 未选中请求：空白，不渲染 tab 内容
               : TabBarView(
-            physics: Platforms.isDesktop() ? const NeverScrollableScrollPhysics() : null, //桌面禁止滑动
-            controller: _tabController,
-            children: isMqtt
-                ? [
-                    SelectionArea(child: Overview(widget.request, widget.response)),
-                    SelectionArea(child: MqttMessages(widget.request)),
-                  ]
-                : [
-                    SelectionArea(child: Overview(widget.request, widget.response)),
-                    KeepAliveWrapper(child: request()),
-                    KeepAliveWrapper(child: response()),
-                    SelectionArea(
-                        child: isStreamMessages
-                            ? Websocket(widget.request, widget.response)
-                            : Cookies(widget.request, widget.response)),
-                  ],
-          )),
+                  physics: isDesktop ? const NeverScrollableScrollPhysics() : null,
+                  controller: _tabController,
+                  children: isMqtt
+                      ? [
+                          Overview(widget.request, widget.response, density: layout.headers),
+                          SelectionArea(child: MqttMessages(widget.request)),
+                        ]
+                      : [
+                          Overview(widget.request, widget.response,
+                              density: layout.headers, bodyKey: overviewHttpBodyKey, active: _activeTab == 0),
+                          KeepAliveWrapper(child: request(layout.headers)),
+                          KeepAliveWrapper(child: response(layout.headers)),
+                          if (isStreamMessages)
+                            SelectionArea(child: Websocket(widget.request, widget.response))
+                          else
+                            Cookies(widget.request, widget.response, density: layout.headers),
+                        ],
+                )),
     );
   }
 
-  /// 设计稿 .dp-panel：桌面端请求/响应/Cookies tab 内容包白卡片（圆角 10 + 边框）
-  Widget detailCard(Widget child) {
-    if (!Platforms.isDesktop()) {
-      return child; // 手机端保持平铺
-    }
-    var theme = Theme.of(context);
-    return Container(
-        decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border.all(color: cardBorderColor(theme)),
-            borderRadius: BorderRadius.circular(10)),
-        child: ClipRRect(borderRadius: BorderRadius.circular(10), child: child));
-  }
-
-  Widget request() {
+  Widget request(HeaderDensity density) {
     if (widget.request.get() == null) {
       return const SizedBox();
     }
 
-    var scrollController = ScrollController(); //处理body也有滚动条问题
     // 路径带查询参数（pathAndQuery），下方「查询参数」分区仍提供逐项解析
     var path = widget.request.get()?.pathAndQuery ?? '';
     try {
       path = Uri.decodeFull(path);
     } catch (_) {}
 
-    return detailCard(SingleChildScrollView(
-        controller: scrollController,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          overviewRow(context, localizations.path, path),
-          RequestParams(widget.request),
-          ...message(widget.request.get(), "Request", scrollController)
-        ])));
+    return _DetailScrollView(controller: _requestScrollController, slivers: [
+      SliverToBoxAdapter(child: DetailField(name: localizations.path, value: path, density: density)),
+      SliverToBoxAdapter(child: RequestParams(widget.request, density: density)),
+      ...message(widget.request.get(), "Request", _requestScrollController, density),
+    ]);
   }
 
-  Widget response() {
-    if (widget.response.get() == null) {
+  Widget response(HeaderDensity density) {
+    final response = widget.response.get();
+    if (response == null) {
       return const SizedBox();
     }
 
-    var scrollController = ScrollController();
-    return detailCard(SingleChildScrollView(
-        controller: scrollController,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 设计稿：状态码值按状态码语义色（200 绿）
-          overviewRow(context, localizations.statusCode, widget.response.get()?.status.toString(),
-              valueColor: statusColor(widget.response.get()?.status.code, Theme.of(context))),
-          ...message(widget.response.get(), "Response", scrollController)
-        ])));
+    return _DetailScrollView(controller: _responseScrollController, slivers: [
+      SliverToBoxAdapter(
+        child: DetailField(
+          name: localizations.statusCode,
+          value: response.status.toString(),
+          density: density,
+          valueColor: statusColor(response.status.code, Theme.of(context)),
+        ),
+      ),
+      ...message(response, "Response", _responseScrollController, density),
+    ]);
   }
 
   String tabLabel(String title) {
@@ -392,7 +432,7 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
     }
   }
 
-  Widget detailTitleBar(HttpRequest request) {
+  Widget detailTitleBar(HttpRequest request, Widget? layoutButton) {
     var url = request.requestUrl;
     try {
       url = Uri.decodeFull(url);
@@ -400,12 +440,11 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
 
     var theme = Theme.of(context);
     return Container(
-        height: 44,
-        padding: const EdgeInsets.only(left: 16, right: 8),
+        height: _detailTitleHeight,
+        padding: const EdgeInsets.only(left: 12, right: 8),
         child: Row(children: [
           Text(request.method.name.toUpperCase(),
-              style: TextStyle(
-                  fontSize: 11.5,
+              style: theme.textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                   color: request.isWebSocket == true
@@ -417,8 +456,7 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
               child: SelectableText(url,
                   maxLines: 1,
                   contextMenuBuilder: contextMenu,
-                  style: TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface))),
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurface))),
           const SizedBox(width: 4),
           miniAction(
               tooltip: localizations.copyUrl,
@@ -428,8 +466,7 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
                   if (mounted) FlutterToastr.show(localizations.copied, context);
                 });
               }),
-          miniAction(
-              tooltip: localizations.repeat, icon: 'refresh', onPressed: () => resendRequest(request)),
+          miniAction(tooltip: localizations.repeat, icon: 'refresh', onPressed: () => resendRequest(request)),
           Builder(builder: (context) {
             _checkFavorited(request);
             var favorited = _favoritedId == request.requestId && _favorited;
@@ -441,6 +478,7 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
                 iconWidget: favorited ? Icon(Icons.star, size: 16, color: amber) : null,
                 onPressed: () => _toggleFavorite(request));
           }),
+          if (layoutButton != null) layoutButton,
         ]));
   }
 
@@ -466,67 +504,91 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
 
   void resendRequest(HttpRequest httpRequest) {
     var proxyServer = widget.proxyServer;
-    var proxyInfo = proxyServer != null && proxyServer.isRunning
-        ? ProxyInfo.of("127.0.0.1", proxyServer.port)
-        : null;
+    var proxyInfo = proxyServer != null && proxyServer.isRunning ? ProxyInfo.of("127.0.0.1", proxyServer.port) : null;
     HttpClients.proxyRequest(httpRequest.copy(uri: httpRequest.requestUrl), proxyInfo: proxyInfo);
     FlutterToastr.show(localizations.reSendRequest, context, rootNavigator: true);
   }
 
-  List<Widget> message(HttpMessage? message, String type, ScrollController scrollController) {
-    Widget bodyWidgets = HttpBodyWidget(
-        key: type == "Request" ? requestHttpBodyKey : responseHttpBodyKey,
-        hideRequestRewrite: widget.windowId != null,
-        httpMessage: message,
-        scrollController: scrollController);
-
+  List<Widget> message(HttpMessage? message, String type, ScrollController scrollController, HeaderDensity density) {
     return [
-      HeadersWidget(title: type, message: message, valueTextStyle: textStyle),
-      // 卡片内统一 14px 水平内边距（设计稿 .kv/.d-sec padding 14）
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: bodyWidgets),
+      SliverToBoxAdapter(child: HeadersWidget(title: type, message: message, density: density)),
+      SliverToBoxAdapter(child: detailDivider(context)),
+      _detailBody(
+        bodyKey: type == "Request" ? requestHttpBodyKey : responseHttpBodyKey,
+        hideRequestRewrite: widget.windowId != null,
+        message: message,
+        active: _activeTab == (type == "Request" ? 1 : 2),
+        scrollController: scrollController,
+      ),
     ];
   }
 }
 
+class _DetailScrollView extends StatelessWidget {
+  final ScrollController? controller;
+  final List<Widget> slivers;
+
+  const _DetailScrollView({this.controller, required this.slivers});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: CustomScrollView(controller: controller, slivers: [
+        const SliverToBoxAdapter(child: SizedBox(height: 2)),
+        ...slivers,
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+      ]),
+    );
+  }
+}
+
+Widget _detailBody({
+  GlobalKey<HttpBodyState>? bodyKey,
+  required HttpMessage? message,
+  required bool hideRequestRewrite,
+  required bool active,
+  ScrollController? scrollController,
+}) {
+  double? previousHeight;
+  Widget? body;
+  return SliverLayoutBuilder(builder: (context, constraints) {
+    final toolbarSpace = Platforms.isDesktop() ? 46.0 : 76.0;
+    final availableHeight = max(0.0, constraints.viewportMainAxisExtent - toolbarSpace);
+    final previewHeight = max(min(availableHeight, 240.0), availableHeight - constraints.precedingScrollExtent);
+    if (previousHeight == previewHeight && body != null) return body!;
+    previousHeight = previewHeight;
+    return body = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: HttpBodyWidget(
+          key: bodyKey,
+          httpMessage: message,
+          hideRequestRewrite: hideRequestRewrite,
+          active: active,
+          scrollController: scrollController,
+          previewHeight: previewHeight,
+        ),
+      ),
+    );
+  });
+}
+
 /// 设计稿 --text-3：浅色 #8F959E，暗黑 #6F747D
-Color text3Color(ThemeData theme) =>
-    theme.brightness == Brightness.light ? const Color(0xFF8F959E) : DarkPalette.text3;
+Color text3Color(ThemeData theme) => theme.brightness == Brightness.light ? const Color(0xFF8F959E) : DarkPalette.text3;
 
 /// 设计稿 行 hover（.row:hover / .rl-row:hover）：浅色 #F7F8FA，暗黑 --hover-weak #2A2D33
 Color rowHoverColor(ThemeData theme) =>
     theme.brightness == Brightness.light ? const Color(0xFFF7F8FA) : DarkPalette.hoverWeak;
-
-/// 设计稿 .kv 行之间的 #F2F3F5 细分隔线
-Widget kvDivider(BuildContext context) {
-  return Divider(height: 1, thickness: 1, color: Theme.of(context).dividerColor.withValues(alpha: 0.35));
-}
-
-/// 可折叠分区小标题（Cookies/Query 参数共用）：文字 + 尾部 chevron，折叠时显示条数；整行 hover 效果
-Widget collapsibleSectionLabel(BuildContext context, String label, int count, bool expanded, VoidCallback onTap) {
-  var theme = Theme.of(context);
-  var text3 = text3Color(theme);
-  var style = TextStyle(fontSize: 14, height: 1.5, letterSpacing: 0.3, color: text3);
-  return InkWell(
-      onTap: onTap,
-      // 整行 hover 焦点效果：设计稿行 hover #F7F8FA
-      hoverColor: rowHoverColor(theme),
-      child: Padding(
-          padding: const EdgeInsets.only(left: 14, right: 14, top: 10, bottom: 4),
-          child: Row(children: [
-            Text(label, style: style),
-            const SizedBox(width: 2),
-            Icon(expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, size: 16, color: text3),
-            if (!expanded && count > 0) Text(' · $count', style: style),
-          ])));
-}
 
 class RequestParams extends StatefulWidget {
   /// 展开状态跨请求保持（旧版行为）：默认折叠，点开一个详情的折叠/展开对后续详情生效
   static bool initiallyExpanded = false;
 
   final ValueWrap<HttpRequest> request;
+  final HeaderDensity density;
 
-  const RequestParams(this.request, {super.key});
+  const RequestParams(this.request, {super.key, required this.density});
 
   @override
   State<RequestParams> createState() => _RequestParamsState();
@@ -543,35 +605,31 @@ class _RequestParamsState extends State<RequestParams> {
     if (params == null || params.isEmpty) {
       return const SizedBox();
     }
-    var content = <Widget>[];
-    var count = 0;
-    params.forEach((name, values) {
-      for (var val in values) {
-        if (content.isNotEmpty) {
-          content.add(kvDivider(context));
-        }
-        content.add(overviewRow(context, name, val));
-        count++;
-      }
-    });
-
-    var expanded = RequestParams.initiallyExpanded;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // 与 Cookies 同款可折叠小标题：chevron + 折叠时显示条数
-      collapsibleSectionLabel(context, AppLocalizations.of(context)!.queryParams, count, expanded, () {
-        setState(() => RequestParams.initiallyExpanded = !expanded);
-      }),
-      if (expanded) ...content,
+    final entries = [
+      for (final param in params.entries)
+        for (final value in param.value) MapEntry(param.key, value),
+    ];
+    final expanded = RequestParams.initiallyExpanded;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DetailSectionHeader(
+        label: AppLocalizations.of(context)!.queryParams,
+        count: entries.length,
+        expanded: expanded,
+        onTap: () => setState(() => RequestParams.initiallyExpanded = !expanded),
+      ),
+      if (expanded) DetailTable(entries: entries, density: widget.density),
     ]);
   }
 }
 
 class Overview extends StatelessWidget {
   final ValueWrap<HttpRequest> request;
-
   final ValueWrap<HttpResponse> response;
+  final HeaderDensity density;
+  final GlobalKey<HttpBodyState>? bodyKey;
+  final bool active;
 
-  const Overview(this.request, this.response, {super.key});
+  const Overview(this.request, this.response, {super.key, required this.density, this.bodyKey, this.active = true});
 
   @override
   Widget build(BuildContext context) {
@@ -585,48 +643,56 @@ class Overview extends StatelessWidget {
     try {
       requestUrl = Uri.decodeFull(request.requestUrl);
     } catch (_) {}
+
+    DetailField row(String name, String? value, {Color? valueColor}) =>
+        DetailField(name: name, value: value ?? '', density: density, valueColor: valueColor);
+
     if (request.protocolVersion == 'MQTT') {
-      return Container(
-          color: Theme.of(context).colorScheme.surface,
-          child: ListView(padding: const EdgeInsets.only(top: 2, bottom: 12), children: [
-            overviewCard(context, [
-              overviewRow(context, 'Connection', requestUrl),
-              overviewRow(context, 'Protocol', 'MQTT over TLS'),
-              overviewRow(context, 'Packets', request.messages.length.toString()),
-              overviewRow(context, 'Start Time', request.requestTime.formatMillisecond()),
-              if (request.processInfo != null) overviewRow(context, 'App', request.processInfo!.name),
-            ])
-          ]));
+      return _DetailScrollView(slivers: [
+        SliverToBoxAdapter(
+          child: SelectionArea(
+            child: DetailRows(rows: [
+              row('Connection', requestUrl),
+              row('Protocol', 'MQTT over TLS'),
+              row('Packets', request.messages.length.toString()),
+              row('Start Time', request.requestTime.formatMillisecond()),
+              if (request.processInfo != null) row('App', request.processInfo!.name),
+            ]),
+          ),
+        ),
+      ]);
     }
 
     // 设计稿 Overview 卡：状态码/协议/耗时/大小/远程地址/请求时间/App 七行（桌面端严格对齐）；
     // URL/方法/双 Content-Type 仅手机端 General 保留（桌面端 URL+方法已在顶部标题栏，类型见 Body 分区标签）
     var isDesktop = Platforms.isDesktop();
-    return Container(
-        color: Theme.of(context).colorScheme.surface,
-        child: ListView(padding: const EdgeInsets.only(top: 2, bottom: 12), children: [
-          overviewCard(context, [
-            overviewRow(context, localizations.statusCode, response?.status.toString(),
+    return _DetailScrollView(slivers: [
+      SliverToBoxAdapter(
+        child: SelectionArea(
+          child: DetailRows(rows: [
+            row(localizations.statusCode, response?.status.toString(),
                 valueColor: statusColor(response?.status.code, Theme.of(context))),
-            overviewRow(context, localizations.protocol, request.protocolVersion),
-            overviewRow(context, localizations.duration, _durationText(response)),
-            overviewRow(context, localizations.size, _sizeText(context, request, response)),
-            overviewRow(context, localizations.remoteAddress,
+            row(localizations.protocol, request.protocolVersion),
+            row(localizations.duration, _durationText(response)),
+            row(localizations.size, _sizeText(context, request, response)),
+            row(localizations.remoteAddress,
                 '${response?.remoteHost ?? ''}${response?.remotePort == null ? '' : ':${response?.remotePort}'}'),
-            overviewRow(context, localizations.requestTime, request.requestTime.formatMillisecond()),
-            if (request.processInfo != null) overviewRow(context, localizations.app, request.processInfo!.name),
+            row(localizations.requestTime, request.requestTime.formatMillisecond()),
+            if (request.processInfo != null) row(localizations.app, request.processInfo!.name),
             if (!isDesktop) ...[
-              overviewRow(context, localizations.requestUrl, requestUrl),
-              overviewRow(context, localizations.requestMethod, request.method.name),
-              overviewRow(context, localizations.requestType, request.headers.contentType),
-              overviewRow(context, localizations.responseType, response?.headers.contentType),
+              row(localizations.requestUrl, requestUrl),
+              row(localizations.requestMethod, request.method.name),
+              row(localizations.requestType, request.headers.contentType),
+              row(localizations.responseType, response?.headers.contentType),
             ],
           ]),
-          if (response != null && (response.body?.isNotEmpty ?? false)) ...[
-            const SizedBox(height: 12),
-            ResponsePreviewCard(response),
-          ],
-        ]));
+        ),
+      ),
+      if (response != null && (response.body?.isNotEmpty ?? false)) ...[
+        SliverToBoxAdapter(child: detailDivider(context)),
+        _detailBody(bodyKey: bodyKey, message: response, hideRequestRewrite: true, active: active),
+      ],
+    ]);
   }
 }
 
@@ -686,10 +752,6 @@ Widget mobileDetailTitle(BuildContext context, HttpRequest request) {
       ]));
 }
 
-/// 卡片描边色：浅色在设计稿 --border 基础上降透明度弱化；暗黑直接用设计稿 --border（深底上对比已足够低）
-Color cardBorderColor(ThemeData theme) =>
-    theme.brightness == Brightness.light ? theme.dividerColor.withValues(alpha: 0.6) : theme.dividerColor;
-
 /// 方法颜色按设计稿：浅色 --get #1F8B4C / --post #B76E00 / --put #0E6BB8 / --delete #C4321F；
 /// 暗黑对应 --get #3FB96A / --post #E8A33D / --put #4C9BE8 / --delete #E35B48
 Color methodColor(HttpMethod method, ThemeData theme) {
@@ -723,160 +785,12 @@ Color? statusColor(int? status, ThemeData theme) {
   return dark ? DarkPalette.err : const Color(0xFFC4321F);
 }
 
-Widget overviewCard(BuildContext context, List<Widget> rows) {
-  var theme = Theme.of(context);
-  var children = <Widget>[];
-  for (var i = 0; i < rows.length; i++) {
-    if (i > 0) {
-      children.add(Divider(height: 1, thickness: 1, color: theme.dividerColor.withValues(alpha: 0.35)));
-    }
-    children.add(rows[i]);
-  }
-  return Container(
-      decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: cardBorderColor(theme)),
-          color: theme.colorScheme.surface),
-      child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Column(children: children)));
-}
-
-Widget overviewRow(BuildContext context, String label, String? value, {Color? valueColor}) {
-  var theme = Theme.of(context);
-  return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(
-            width: 130,
-            child: Text(label, style: TextStyle(fontSize: 13, height: 1.5, color: text3Color(theme)))),
-        Expanded(
-            child: SelectableText(value ?? '',
-                contextMenuBuilder: contextMenu,
-                style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 13,
-                    height: 1.5,
-                    color: valueColor ?? theme.colorScheme.onSurface))),
-      ]));
-}
-
-/// Overview 响应体预览卡（设计稿 .code-card）：卡头 Response Body + JSON/Raw/Preview 分段，限高内部滚动
-class ResponsePreviewCard extends StatefulWidget {
-  final HttpResponse response;
-
-  const ResponsePreviewCard(this.response, {super.key});
-
-  @override
-  State<ResponsePreviewCard> createState() => _ResponsePreviewCardState();
-}
-
-class _ResponsePreviewCardState extends State<ResponsePreviewCard> {
-  static const double _maxHeight = 320;
-  late final List<String> views;
-  int viewIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    views = [
-      if (_isImage()) 'Preview',
-      if (_isJson()) 'JSON',
-      if (!_isImage()) 'Raw',
-    ];
-  }
-
-  bool _isImage() => widget.response.contentType == ContentType.image;
-
-  bool _isJson() {
-    if (widget.response.contentType == ContentType.json) return true;
-    var body = widget.response.getBodyString();
-    var trimmed = body.trim();
-    return (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-        (trimmed.startsWith('[') && trimmed.endsWith(']'));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    var theme = Theme.of(context);
-    return Container(
-        decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: cardBorderColor(theme)),
-            color: theme.colorScheme.surface),
-        child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(
-                  height: 36,
-                  child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: Row(children: [
-                        Text(AppLocalizations.of(context)!.responseBody,
-                            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
-                        const Spacer(),
-                        for (var i = 0; i < views.length; i++) fmtButton(i),
-                      ]))),
-              Divider(height: 1, thickness: 1, color: theme.dividerColor.withValues(alpha: 0.35)),
-              ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: _maxHeight),
-                  child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      child: SizedBox(width: double.infinity, child: bodyView()))),
-            ])));
-  }
-
-  /// 设计稿 .fmt 分段小胶囊（选中底色由 Material 绘制，hover/水波纹可见）
-  Widget fmtButton(int index) {
-    var theme = Theme.of(context);
-    var selected = index == viewIndex;
-    return Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: Material(
-            color: selected ? primarySoftBg(theme, lightAlpha: 0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(5),
-            child: InkWell(
-                borderRadius: BorderRadius.circular(5),
-                // 设计稿小控件 hover：浅色 #F0F1F3，暗黑 --hover #31343B
-                hoverColor: theme.brightness == Brightness.light ? const Color(0xFFF0F1F3) : DarkPalette.hover,
-                onTap: () => setState(() => viewIndex = index),
-                child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    child: Text(views[index],
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: selected ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant))))));
-  }
-
-  Widget bodyView() {
-    var view = views[viewIndex];
-    if (view == 'Preview' && _isImage()) {
-      return Center(
-          child: Image.memory(Uint8List.fromList(widget.response.body ?? []), fit: BoxFit.scaleDown));
-    }
-    return futureWidget(widget.response.decodeBodyString(), (body) {
-      if (view == 'JSON') {
-        try {
-          return JsonText(
-              json: json.decode(body),
-              indent: '  ',
-              colorTheme: ColorTheme.of(context),
-              contextMenuBuilder: contextMenu);
-        } catch (_) {
-          // 解析失败回退 Raw
-        }
-      }
-      return SelectableText(body,
-          contextMenuBuilder: contextMenu,
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.5));
-    }, initialData: widget.response.getBodyString());
-  }
-}
-
 class Cookies extends StatefulWidget {
   final ValueWrap<HttpRequest> request;
-
   final ValueWrap<HttpResponse> response;
+  final HeaderDensity density;
 
-  const Cookies(this.request, this.response, {super.key});
+  const Cookies(this.request, this.response, {super.key, required this.density});
 
   @override
   State<Cookies> createState() => _CookiesState();
@@ -888,61 +802,51 @@ class _CookiesState extends State<Cookies> {
   static bool _requestExpanded = true;
   static bool _responseExpanded = true;
 
-  /// 请求 Cookie 个数：headers.cookies 是原始 Cookie 头行（通常 1 行含全部 cookie），
-  /// 需按 ';' 拆开数键值对，否则折叠条数恒为行数（与展开后的行数对不上）
-  int _requestCookieCount(List<String>? headerLines) {
-    if (headerLines == null) return 0;
-    var count = 0;
-    for (final line in headerLines) {
-      count += line.split(';').where((e) => e.contains('=')).length;
-    }
-    return count;
-  }
-
   @override
   Widget build(BuildContext context) {
-    var requestCookies = widget.request.get()?.cookies;
-    var responseCookies = widget.response.get()?.headers.getList("Set-Cookie");
-
-    var requestRows = requestCookies?.expand((cookie) => _cookieWidget(context, cookie)!).toList();
-    var responseRows = responseCookies?.expand((e) => _cookieWidget(context, e)!).toList();
-
-    var localizations = AppLocalizations.of(context)!;
-    var content = ListView(children: [
-      if (requestRows != null) ...[
-        collapsibleSectionLabel(context, localizations.requestCookies, _requestCookieCount(requestCookies),
-            _requestExpanded, () => setState(() => _requestExpanded = !_requestExpanded)),
-        if (_requestExpanded) ...requestRows,
-      ],
-      if (responseRows != null) ...[
-        collapsibleSectionLabel(context, localizations.responseCookies, responseCookies?.length ?? 0,
-            _responseExpanded, () => setState(() => _responseExpanded = !_responseExpanded)),
-        if (_responseExpanded) ...responseRows,
-      ],
-    ]);
-
-    if (!Platforms.isDesktop()) {
-      return content;
+    final requestCookies = widget.request.get()?.cookies ?? const <String>[];
+    final responseCookies = widget.response.get()?.headers.getList("Set-Cookie") ?? const <String>[];
+    final requestEntries = requestCookies.expand(_cookieEntries).toList();
+    final localizations = AppLocalizations.of(context)!;
+    if (requestEntries.isEmpty && responseCookies.isEmpty) {
+      return Center(child: Text(localizations.emptyData, style: detailFieldStyle(context)));
     }
-    var theme = Theme.of(context);
-    return Container(
-        decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border.all(color: cardBorderColor(theme)),
-            borderRadius: BorderRadius.circular(10)),
-        child: ClipRRect(borderRadius: BorderRadius.circular(10), child: content));
+    return _DetailScrollView(slivers: [
+      SliverList.list(children: [
+        if (requestEntries.isNotEmpty) ...[
+          DetailSectionHeader(
+            label: localizations.requestCookies,
+            count: requestEntries.length,
+            expanded: _requestExpanded,
+            onTap: () => setState(() => _requestExpanded = !_requestExpanded),
+          ),
+          if (_requestExpanded) DetailTable(entries: requestEntries, density: widget.density),
+        ],
+        if (responseCookies.isNotEmpty) ...[
+          DetailSectionHeader(
+            label: localizations.responseCookies,
+            count: responseCookies.length,
+            expanded: _responseExpanded,
+            onTap: () => setState(() => _responseExpanded = !_responseExpanded),
+          ),
+          if (_responseExpanded)
+            for (final cookie in responseCookies)
+              DetailTable(entries: _cookieEntries(cookie, includeFlags: true), density: widget.density),
+        ],
+      ])
+    ]);
   }
 
-  Iterable<Widget>? _cookieWidget(BuildContext context, String? cookie) {
-    var headers = <Widget>[];
-
-    cookie?.split(";").map((e) => Strings.splitFirst(e, "=")).where((element) => element != null).forEach((e) {
-      if (headers.isNotEmpty) {
-        headers.add(kvDivider(context));
+  Iterable<MapEntry<String, String>> _cookieEntries(String cookie, {bool includeFlags = false}) sync* {
+    final segments = cookie.split(';');
+    for (var index = 0; index < segments.length; index++) {
+      final segment = segments[index].trimLeft();
+      final entry = Strings.splitFirst(segment, '=');
+      if (entry != null) {
+        yield MapEntry(entry.key.trimRight(), entry.value);
+      } else if (includeFlags && index > 0 && segment.isNotEmpty && !segment.startsWith('=')) {
+        yield MapEntry(segment.trimRight(), '');
       }
-      headers.add(overviewRow(context, e!.key.trim(), e.value));
-    });
-
-    return headers;
+    }
   }
 }

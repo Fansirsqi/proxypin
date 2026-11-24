@@ -23,12 +23,13 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/native/vpn.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
-import 'package:proxypin/ui/desktop/ssl/pc_cert.dart';
 import 'package:proxypin/ui/configuration.dart';
-import 'package:proxypin/utils/lang.dart';
+import 'package:proxypin/ui/desktop/ssl/pc_cert.dart';
 import 'package:proxypin/utils/desktop_tray.dart';
+import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -64,6 +65,8 @@ class SocketLaunch extends StatefulWidget {
 class _SocketLaunchState extends State<SocketLaunch> with WindowListener, WidgetsBindingObserver {
   AppLocalizations get localizations => AppLocalizations.of(context)!;
   bool started = false;
+  bool _closing = false;
+  bool _exiting = false;
 
   @override
   void initState() {
@@ -102,70 +105,92 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
   @override
   void onWindowClose() async {
-    logger.d("onWindowClose");
-    await _handleWindowClose();
+    if (_closing || _exiting) return;
+    _closing = true;
+    try {
+      await _handleWindowClose();
+    } finally {
+      _closing = false;
+    }
   }
 
   Future<void> _handleWindowClose() async {
     final appConfiguration = AppConfiguration.current;
-    if (Platforms.isDesktop() && appConfiguration?.minimizeToTray == null || appConfiguration?.minimizeToTray == true) {
-      if (appConfiguration?.minimizeToTray == null) {
-        final minimize = await _showTrayClosePrompt();
-        if (!mounted) {
-          return;
-        }
+    var action = appConfiguration?.windowCloseAction ?? WindowCloseAction.ask;
+    var remember = false;
+    if (action == WindowCloseAction.ask) {
+      final decision = await _showClosePrompt();
+      if (!mounted || decision == null) return;
+      (action, remember) = decision;
+    }
 
-        appConfiguration?.minimizeToTray = minimize;
-        await appConfiguration?.flushConfig();
-
-        if (!minimize) {
-          await appExit();
-          return;
-        }
-      }
-
+    if (action == WindowCloseAction.minimize) {
+      await windowManager.minimize();
+    } else if (action == WindowCloseAction.tray) {
       try {
         await DesktopTrayManager.instance.showToTray();
-        return;
       } catch (e) {
-        logger.e('show to tray failed, fallback to exit', error: e);
+        logger.e('Could not minimize to the system tray', error: e);
+        if (mounted) FlutterToastr.show(localizations.fail, context, duration: 3);
+        return;
       }
     }
 
-    await appExit();
+    if (remember && appConfiguration != null) {
+      appConfiguration.windowCloseAction = action;
+      await appConfiguration.flushConfig();
+    }
+    if (action == WindowCloseAction.quit) await appExit();
   }
 
-  Future<bool> _showTrayClosePrompt() async {
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) {
-            return AlertDialog(
-              title: Text(localizations.minimizeToTrayTitle),
-              content: SizedBox(width: 320, child: Text(maxLines: 3, localizations.trayClosePromptContent)),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: Text(localizations.trayCloseExitAnyway),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: Text(localizations.trayCloseMinimizeToTray),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
+  Future<(WindowCloseAction, bool)?> _showClosePrompt() {
+    final strings = localizations;
+    var remember = false;
+    return showDialog<(WindowCloseAction, bool)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(strings.trayCloseTitle),
+          content: SizedBox(
+            width: 360,
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(strings.trayClosePromptContent),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(strings.trayCloseRemember),
+                value: remember,
+                onChanged: (value) => setState(() => remember = value ?? false),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(strings.cancel)),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop((WindowCloseAction.quit, remember)),
+              child: Text(strings.trayCloseExitAnyway),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop((WindowCloseAction.tray, remember)),
+              child: Text(strings.trayCloseMinimizeToTray),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> appExit() async {
+    if (_exiting) return;
+    _exiting = true;
     logger.d("appExit");
     await widget.proxyServer.stop();
     started = false;
     if (Platforms.isDesktop()) {
+      await DesktopMultiWindow.closeStandaloneWindows();
       await DesktopTrayManager.instance.exitApp();
-      windowManager.setPreventClose(false);
+      await windowManager.setPreventClose(false);
       await windowManager.destroy();
     }
 

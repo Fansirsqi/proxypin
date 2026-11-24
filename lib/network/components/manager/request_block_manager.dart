@@ -36,7 +36,7 @@ class RequestBlockManager {
     if (_instance == null) {
       var file = await configFile();
       _instance = RequestBlockManager._(file);
-      await _instance?._load();
+      await _instance?.reloadConfig();
     }
     return _instance!;
   }
@@ -51,7 +51,7 @@ class RequestBlockManager {
   }
 
   ///加载
-  Future<void> _load() async {
+  Future<void> reloadConfig() async {
     var json = await _storageFile.readAsString();
     if (json.isEmpty) return;
     var config = jsonDecode(json);
@@ -89,7 +89,7 @@ class RequestBlockManager {
 
   ///刷新配置
   Future<void> flushConfig() async {
-    _storageFile.writeAsString(jsonEncode({'enabled': enabled, 'list': list}));
+    await _storageFile.writeAsString(jsonEncode({'enabled': enabled, 'list': list}));
   }
 }
 

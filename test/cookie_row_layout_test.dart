@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:proxypin/ui/content/panel.dart';
+import 'package:proxypin/ui/configuration.dart';
+import 'package:proxypin/ui/content/detail_fields.dart';
 
 void main() {
   testWidgets('long cookie key wraps without overlapping its value', (tester) async {
@@ -12,7 +13,10 @@ void main() {
         body: Center(
           child: SizedBox(
             width: 360,
-            child: Builder(builder: (context) => overviewRow(context, cookieKey, cookieValue)),
+            child: const DetailTable(
+              entries: [MapEntry(cookieKey, cookieValue)],
+              density: HeaderDensity.compact,
+            ),
           ),
         ),
       ),

@@ -10,6 +10,8 @@ import 'package:proxypin/network/util/logger.dart';
 
 import '../component/buttons.dart';
 
+import 'viewer_app_bar.dart';
+
 ///编码类型
 enum EncoderType {
   url,
@@ -67,15 +69,16 @@ class _EncoderState extends State<EncoderWidget> with SingleTickerProviderStateM
   @override
   void dispose() {
     tabController.dispose();
+    outputTextController.dispose();
     HardwareKeyboard.instance.removeHandler(onKeyEvent);
     super.dispose();
   }
 
   bool onKeyEvent(KeyEvent event) {
-    if ((HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed) &&
+    if (widget.windowController != null &&
+        event is KeyDownEvent &&
+        (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed) &&
         event.logicalKey == LogicalKeyboardKey.keyW) {
-      HardwareKeyboard.instance.removeHandler(onKeyEvent);
-      tabController.dispose();
       widget.windowController?.close();
       return true;
     }
@@ -87,9 +90,8 @@ class _EncoderState extends State<EncoderWidget> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-          title: Text('${type.name.toUpperCase()}${localizations.encode}', style: const TextStyle(fontSize: 16)),
-          centerTitle: true,
+      appBar: viewerAppBar(context, '${type.name.toUpperCase()}${localizations.encode}',
+          windowId: widget.windowController?.windowId,
           bottom: TabBar(
             controller: tabController,
             tabs: tabs,

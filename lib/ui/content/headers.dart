@@ -25,6 +25,7 @@ import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
 
 import '../component/search/search_controller.dart';
+import 'detail_fields.dart';
 
 /// A reusable panel to display request/response headers.
 ///
@@ -34,7 +35,7 @@ import '../component/search/search_controller.dart';
 class HeadersWidget extends StatefulWidget {
   final String title;
   final HttpMessage? message;
-  final TextStyle valueTextStyle;
+  final HeaderDensity density;
 
   /// Optional shared controller for raw-text mode, so caller can reuse
   /// controllers between rebuilds (e.g. separate for Request/Response).
@@ -44,7 +45,7 @@ class HeadersWidget extends StatefulWidget {
     super.key,
     required this.title,
     required this.message,
-    this.valueTextStyle = const TextStyle(fontSize: 14),
+    this.density = HeaderDensity.compact,
     this.controller,
   });
 
@@ -58,6 +59,7 @@ class _HeadersWidgetState extends State<HeadersWidget> {
 
   /// 头部区分区默认展开，可点击标签行折叠
   late bool _expanded;
+  final _rawSearchController = SearchTextController();
 
   @override
   void initState() {
@@ -65,11 +67,18 @@ class _HeadersWidgetState extends State<HeadersWidget> {
     _expanded = _lastExpanded[widget.title] ?? true;
   }
 
-  Widget _buildCopyButton(BuildContext context) {
+  @override
+  void dispose() {
+    _rawSearchController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildCopyButton(BuildContext context, String text) {
     final localizations = AppLocalizations.of(context)!;
-    final text = _buildRawHeaders(widget.message);
     return IconButton(
       visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      padding: EdgeInsets.zero,
       iconSize: 15,
       tooltip: localizations.copy,
       onPressed: text.isEmpty
@@ -83,124 +92,74 @@ class _HeadersWidgetState extends State<HeadersWidget> {
     );
   }
 
-  Widget _buildHeaderModeToggle(BuildContext context) {
-    final config = AppConfiguration.current;
-    if (config == null) return const SizedBox();
-    final isText = config.headerViewMode == 'text';
-    void setMode(bool text) {
-      config.headerViewMode = text ? 'text' : 'table';
-      config.flushConfig();
-      setState(() {});
-    }
-
+  Widget _buildHeaderModeToggle(BuildContext context, AppConfiguration config, bool isText) {
     return IconButton(
       visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      padding: EdgeInsets.zero,
       iconSize: 15,
-      tooltip: isText ? 'Headers: Text' : 'Headers: Table',
-      onPressed: () => setMode(!isText),
-      // 文本模式=纯行 list，表格模式=带行点的 lines，与工具栏同套 stroke SVG
+      tooltip: isText
+          ? AppLocalizations.of(context)!.detailShowHeaderTable
+          : AppLocalizations.of(context)!.detailShowRawHeaders,
+      onPressed: () {
+        if (!_expanded) {
+          setState(() {
+            _expanded = true;
+            _lastExpanded[widget.title] = true;
+          });
+        }
+        config.headerViewMode.value = isText ? 'table' : 'text';
+        config.flushConfig();
+      },
       icon: SvgIcon(isText ? 'list' : 'lines', size: 15, color: Theme.of(context).colorScheme.onSurfaceVariant),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isTextMode = (AppConfiguration.current?.headerViewMode ?? 'table') == 'text';
-    final theme = Theme.of(context);
-    final localizations = AppLocalizations.of(context)!;
-    // 设计稿 .d-sec：11px 灰色扁平分区标签（请求头/响应头），点击整行展开/折叠
-    final label = widget.title == 'Request' ? localizations.requestHeader : localizations.responseHeader;
-    final text3 = theme.brightness == Brightness.light ? const Color(0xFF8F959E) : DarkPalette.text3;
-    var headerCount = 0;
-    widget.message?.headers.forEach((_, values) => headerCount += values.length);
-    final labelStyle = TextStyle(fontSize: 14, height: 1.5, letterSpacing: 0.3, color: text3);
+    final config = AppConfiguration.current;
+    if (config == null) return _buildSection(context, null, false);
+    return ValueListenableBuilder<String>(
+      valueListenable: config.headerViewMode,
+      builder: (context, mode, _) => _buildSection(context, config, mode == 'text'),
+    );
+  }
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      InkWell(
-          onTap: () => setState(() {
-            _expanded = !_expanded;
-            _lastExpanded[widget.title] = _expanded;
-          }),
-          // 整行 hover 焦点效果：设计稿行 hover，浅色 #F7F8FA，暗黑 --hover-weak
-          hoverColor: theme.brightness == Brightness.light ? const Color(0xFFF7F8FA) : DarkPalette.hoverWeak,
-          child: Padding(
-              padding: const EdgeInsets.only(left: 14, right: 6, top: 10, bottom: 2),
-              child: Row(children: [
-                Text(label, style: labelStyle),
-                const SizedBox(width: 2),
-                // chevron 放文字后面：与其他分区小标题（查询参数/Cookies）保持同一左缘
-                Icon(_expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right, size: 16, color: text3),
-                // 折叠时显示条数，展开时保持设计稿纯净
-                if (!_expanded && headerCount > 0) Text(' · $headerCount', style: labelStyle),
-                const Spacer(),
-                _buildCopyButton(context),
-                _buildHeaderModeToggle(context),
-              ]))),
-      if (_expanded) ...[
-        if (!isTextMode) ..._buildHeaderRows(context, widget.message) else ...buildTextMode(widget.message),
-      ],
+  Widget _buildSection(BuildContext context, AppConfiguration? config, bool isText) {
+    final labels = AppLocalizations.of(context)!;
+    final entries = <MapEntry<String, String>>[];
+    widget.message?.headers.forEach((name, values) {
+      entries.addAll(values.map((value) => MapEntry(name, value)));
+    });
+    final raw = entries.map((entry) => '${entry.key}: ${entry.value}').join('\n');
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DetailSectionHeader(
+        label: widget.title == 'Request' ? labels.requestHeader : labels.responseHeader,
+        count: entries.length,
+        expanded: _expanded,
+        onTap: () => setState(() {
+          _expanded = !_expanded;
+          _lastExpanded[widget.title] = _expanded;
+        }),
+        actions: [
+          _buildCopyButton(context, raw),
+          if (config != null) _buildHeaderModeToggle(context, config, isText),
+        ],
+      ),
+      if (_expanded && entries.isNotEmpty)
+        if (isText)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: HighlightTextWidget(
+              text: raw,
+              style: detailFieldStyle(context),
+              language: 'http',
+              searchController: _rawSearchController,
+              contextMenuBuilder: contextMenu,
+            ),
+          )
+        else
+          DetailTable(entries: entries, density: widget.density),
     ]);
-  }
-
-  List<Widget> buildTextMode(HttpMessage? message) {
-    final text = _buildRawHeaders(message);
-
-    return [
-      Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: HighlightTextWidget(
-            text: text,
-            language: 'http',
-            searchController: SearchTextController(),
-            contextMenuBuilder: contextMenu,
-          )),
-    ];
-  }
-
-  /// 设计稿 .kv：130px 灰色头名（12.5px）+ 等宽值（12px），行间 #F2F3F5 细线
-  List<Widget> _buildHeaderRows(BuildContext context, HttpMessage? message) {
-    final theme = Theme.of(context);
-    final text3 = theme.brightness == Brightness.light ? const Color(0xFF8F959E) : DarkPalette.text3;
-    final divider = Divider(height: 1, thickness: 1, color: theme.dividerColor.withValues(alpha: 0.35));
-
-    final rows = <Widget>[];
-    message?.headers.forEach((name, values) {
-      for (final v in values) {
-        if (rows.isNotEmpty) {
-          rows.add(divider);
-        }
-        rows.add(Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SizedBox(
-                  width: 130,
-                  // 长头名（如 Access-Control-Allow-Origin）允许换行，避免溢出遮挡值
-                  child: Text(name, style: TextStyle(fontSize: 13, height: 1.5, color: text3))),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SelectableText(
-                  v,
-                  style: TextStyle(
-                      fontFamily: 'monospace', fontSize: 13, height: 1.5, color: theme.colorScheme.onSurface),
-                  contextMenuBuilder: contextMenu,
-                  maxLines: 8,
-                  minLines: 1,
-                ),
-              ),
-            ])));
-      }
-    });
-    return rows;
-  }
-
-  String _buildRawHeaders(HttpMessage? message) {
-    if (message == null) return '';
-    final buffer = StringBuffer();
-    message.headers.forEach((name, values) {
-      for (final v in values) {
-        buffer.writeln('$name: $v');
-      }
-    });
-    return buffer.toString().trimRight();
   }
 }

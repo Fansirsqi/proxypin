@@ -286,7 +286,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
   Future<void> requestEdit(HttpRequest request) async {
     var size = MediaQuery.of(context).size;
 
-    await MultiWindow.openWindow(localizations.requestEdit, 'RequestEditor',
+    await MultiWindow.openToolWindow(localizations.requestEdit, 'RequestEditor',
         size: Size(960, size.height), args: {'request': request});
   }
 

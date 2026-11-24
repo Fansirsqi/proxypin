@@ -24,6 +24,15 @@ class AppLocalizationsVi extends AppLocalizations {
   String get navRequests => 'Yêu cầu';
 
   @override
+  String get expandNavigation => 'Mở rộng thanh bên';
+
+  @override
+  String get collapseNavigation => 'Thu gọn thanh bên';
+
+  @override
+  String get proxyBypassSeparatorHint => 'Phân cách các mục bằng dấu chấm phẩy';
+
+  @override
   String get favorites => 'Yêu thích';
 
   @override
@@ -129,6 +138,30 @@ class AppLocalizationsVi extends AppLocalizations {
   String get themeColor => 'Màu giao diện';
 
   @override
+  String get themePrimary => 'Màu chính';
+
+  @override
+  String get themeSecondary => 'Màu phụ';
+
+  @override
+  String get themeTertiary => 'Màu bổ sung';
+
+  @override
+  String get themeSurface => 'Bề mặt';
+
+  @override
+  String get paletteClassic => 'Cổ điển';
+
+  @override
+  String get paletteSoft => 'Dịu nhẹ';
+
+  @override
+  String get paletteVivid => 'Rực rỡ';
+
+  @override
+  String get paletteNeutral => 'Trung tính';
+
+  @override
   String get themeLight => 'Sáng';
 
   @override
@@ -154,13 +187,31 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get trayClosePromptContent =>
-      'Closing the window will keep ProxyPin running in the system tray. Do you want to minimize it now?';
+      'Minimize to keep ProxyPin running in the system status area, or exit to stop it.';
 
   @override
-  String get trayCloseExitAnyway => 'Exit anyway';
+  String get trayCloseExitAnyway => 'Exit';
 
   @override
-  String get trayCloseMinimizeToTray => 'Minimize to tray';
+  String get trayCloseMinimizeToTray => 'Minimize to status area';
+
+  @override
+  String get trayCloseTitle => 'Close ProxyPin';
+
+  @override
+  String get trayCloseAsk => 'Ask every time';
+
+  @override
+  String get trayCloseRemember => 'Remember my choice';
+
+  @override
+  String get windowCloseMinimize => 'Minimize window';
+
+  @override
+  String get windowClosePrompt => 'Minimize ProxyPin to the taskbar and keep it running, or exit the application.';
+
+  @override
+  String get jsonTreeView => 'Tree';
 
   @override
   String get copied => 'Copied to clipboard';
@@ -1477,13 +1528,64 @@ class AppLocalizationsVi extends AppLocalizations {
   String get pinnedDragSort => 'Pinned (drag to reorder)';
 
   @override
-  String get pinToolsHint => 'All tools (tap + to pin to toolbar)';
+  String get pinToolsHint => 'All tools (select to pin)';
 
   @override
   String get image => 'Image';
 
   @override
   String get filtered => 'Filtered';
+
+  @override
+  String get detailLayoutSettings => 'Detail layout';
+
+  @override
+  String get detailTabAlignment => 'Tab bar alignment';
+
+  @override
+  String get detailTabLabelAlignment => 'Tab label alignment';
+
+  @override
+  String get detailAlignLeft => 'Left';
+
+  @override
+  String get detailAlignCenter => 'Center';
+
+  @override
+  String get detailAlignRight => 'Right';
+
+  @override
+  String get detailAlignTop => 'Top';
+
+  @override
+  String get detailAlignBottom => 'Bottom';
+
+  @override
+  String get detailHeaderDensity => 'Table row density';
+
+  @override
+  String get detailDensityComfortable => 'Comfortable';
+
+  @override
+  String get detailDensityCompact => 'Compact';
+
+  @override
+  String get detailDensityDense => 'Dense';
+
+  @override
+  String get detailCopyHeaderName => 'Copy key';
+
+  @override
+  String get detailCopyHeaderValue => 'Copy value';
+
+  @override
+  String get detailShowHeaderTable => 'Show header table';
+
+  @override
+  String get detailShowRawHeaders => 'Show raw headers';
+
+  @override
+  String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
   String get captureListDensity => 'Mật độ danh sách';

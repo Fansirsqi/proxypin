@@ -43,7 +43,15 @@ import 'package:url_launcher/url_launcher.dart';
 bool _refresh = false;
 
 /// 刷新脚本
-Future<void> _refreshScript({bool force = false}) async {
+Future<void> _refreshScript({bool force = false, Future<void> Function()? change}) async {
+  if (DesktopMultiWindow.isStandalone) {
+    return DesktopMultiWindow.saveStandaloneChanges(() async {
+      await change?.call();
+      await (await ScriptManager.instance).flushConfig();
+      await DesktopMultiWindow.invokeMainWindowMethod("refreshScript");
+    });
+  }
+  await change?.call();
   if (force) {
     _refresh = false;
     await ScriptManager.instance.then((manager) => manager.flushConfig());
@@ -113,10 +121,12 @@ class _ScriptWidgetState extends State<ScriptWidget> {
   Widget build(BuildContext context) {
     return Scaffold(
         backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-        appBar: AppBar(
-            title: Text(localizations.script, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            toolbarHeight: 36,
-            centerTitle: true),
+        appBar: DesktopMultiWindow.isStandalone
+            ? null
+            : AppBar(
+                title: Text(localizations.script, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                toolbarHeight: 36,
+                centerTitle: true),
         body: Padding(
             padding: const EdgeInsets.only(left: 15, right: 10),
             child: futureWidget(
@@ -170,7 +180,7 @@ class _ScriptWidgetState extends State<ScriptWidget> {
   }
 
   void consoleLog() {
-    openScriptConsoleWindow();
+    openScriptConsoleWindow(localizations.logger);
   }
 
   //导入js
@@ -183,22 +193,17 @@ class _ScriptWidgetState extends State<ScriptWidget> {
     }
     try {
       var json = jsonDecode(await File(path).readAsString());
-      var scriptManager = (await ScriptManager.instance);
-      if (json is List<dynamic>) {
-        for (var item in json) {
-          var scriptItem = ScriptItem.fromJson(item);
-          await scriptManager.addScript(scriptItem, item['script']);
+      await _refreshScript(change: () async {
+        final manager = await ScriptManager.instance;
+        final items = json is List<dynamic> ? json : [json];
+        for (final item in items) {
+          await manager.addScript(ScriptItem.fromJson(item), item['script']);
         }
-      } else {
-        var scriptItem = ScriptItem.fromJson(json);
-        await scriptManager.addScript(scriptItem, json['script']);
-      }
-
-      _refreshScript();
+      });
       if (mounted) {
         FlutterToastr.show(localizations.importSuccess, context);
+        setState(() {});
       }
-      setState(() {});
     } catch (e, t) {
       logger.e('导入失败 $path', error: e, stackTrace: t);
       if (mounted) {
@@ -236,9 +241,13 @@ class _ScriptConsoleState extends State<ScriptConsoleWidget> {
   @override
   void initState() {
     super.initState();
-    DesktopMultiWindow.invokeMainWindowMethod("registerConsoleLog", widget.windowId);
-    DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
+    _registerConsole();
+  }
+
+  Future<void> _registerConsole() async {
+    await DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
       if (call.method == 'consoleLog') {
+        if (!mounted) return null;
         setState(() {
           var logInfo = LogInfo(call.arguments['level'], call.arguments['output']);
           logs.add(logInfo);
@@ -246,7 +255,7 @@ class _ScriptConsoleState extends State<ScriptConsoleWidget> {
 
         if (scrollEnd) {
           Future.delayed(const Duration(seconds: 1), () {
-            if (mounted) {
+            if (mounted && _scrollController.hasClients) {
               _scrollController.animateTo(_scrollController.position.maxScrollExtent,
                   duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
             }
@@ -255,6 +264,13 @@ class _ScriptConsoleState extends State<ScriptConsoleWidget> {
       }
       return "ok";
     });
+    if (mounted) await DesktopMultiWindow.invokeMainWindowMethod("registerConsoleLog", widget.windowId);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -262,7 +278,9 @@ class _ScriptConsoleState extends State<ScriptConsoleWidget> {
     return Scaffold(
         backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
         appBar: AppBar(
-            title: Text(localizations.logger, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            title: DesktopMultiWindow.isStandalone
+                ? null
+                : Text(localizations.logger, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
             actions: [
               IconButton(
                 tooltip: localizations.scrollEnd,
@@ -472,18 +490,23 @@ class _ScriptEditState extends State<ScriptEdit> {
                 return;
               }
 
-              if (widget.scriptItem == null) {
-                var scriptItem = ScriptItem(true, nameController.text, urls);
-                scriptItem.remoteUrl = _useRemote ? remoteUrl : null;
-                await (await ScriptManager.instance).addScript(scriptItem, script.text);
-              } else {
-                widget.scriptItem?.name = nameController.text;
-                widget.scriptItem?.urls = urls;
-                widget.scriptItem?.urlRegs = null;
-                widget.scriptItem?.remoteUrl = _useRemote ? remoteUrl : null;
-                (await ScriptManager.instance).updateScript(widget.scriptItem!, script.text);
-              }
-              _refreshScript();
+              final name = nameController.text;
+              final code = script.text;
+              await _refreshScript(change: () async {
+                final manager = await ScriptManager.instance;
+                final item = widget.scriptItem;
+                if (item == null) {
+                  final newItem = ScriptItem(true, name, urls)..remoteUrl = hasRemote ? remoteUrl : null;
+                  await manager.addScript(newItem, code);
+                } else {
+                  item
+                    ..name = name
+                    ..urls = urls
+                    ..urlRegs = null
+                    ..remoteUrl = hasRemote ? remoteUrl : null;
+                  await manager.updateScript(item, code);
+                }
+              });
               if (context.mounted) {
                 Navigator.of(context).maybePop(true);
               }
@@ -675,7 +698,7 @@ class _ScriptEditState extends State<ScriptEdit> {
                                     autoFocus: true,
                                     enableGuideLines: false,
                                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
-                                    textStyle: codeTextStyle(size: 13, color: Colors.white),
+                                    textStyle: codeTextStyle(context, size: 13, color: Colors.white),
                                   ),
                                   if (_useRemote && script.text.trim().isEmpty)
                                     Positioned.fill(

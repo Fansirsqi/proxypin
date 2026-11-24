@@ -13,78 +13,127 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
+import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
+import 'package:proxypin/ui/toolbox/viewer_app_bar.dart';
 import 'package:proxypin/utils/replay_task.dart';
 
-///显示重放任务对话框
-Future<void> showReplayTasksDialog(BuildContext context) {
-  return showDialog(context: context, builder: (_) => const ReplayTasksDialog());
-}
+class ReplayTasksPage extends StatefulWidget {
+  final String windowId;
 
-///重放任务列表
-class ReplayTasksDialog extends StatefulWidget {
-  const ReplayTasksDialog({super.key});
+  const ReplayTasksPage({super.key, required this.windowId});
 
   @override
-  State<StatefulWidget> createState() => _ReplayTasksDialogState();
+  State<ReplayTasksPage> createState() => _ReplayTasksPageState();
 }
 
-class _ReplayTasksDialogState extends State<ReplayTasksDialog> {
-  final manager = ReplayTaskManager.instance;
+class _ReplayTasksPageState extends State<ReplayTasksPage> {
+  List<_ReplayTaskRow>? _tasks;
+  late final Timer _refreshTimer;
+  bool _refreshing = false;
+  bool _updating = false;
+  bool _failed = false;
+  int _revision = 0;
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(_refresh());
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _refresh());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing || _updating) return;
+    _refreshing = true;
+    try {
+      await _loadTasks('getReplayTasks');
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  Future<void> _update(String action, [String? id]) async {
+    if (_updating) return;
+    setState(() => _updating = true);
+    _revision++;
+    try {
+      await _loadTasks('updateReplayTask', {'action': action, 'id': id});
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  Future<void> _loadTasks(String method, [Map<String, dynamic>? arguments]) async {
+    final revision = _revision;
+    try {
+      final result = await DesktopMultiWindow.invokeMainWindowMethod<List<dynamic>>(method, arguments);
+      if (!mounted || revision != _revision) return;
+      if (result == null) throw StateError('Main window is unavailable');
+      final tasks = result.map((task) => _ReplayTaskRow.fromMap(task as Map)).toList(growable: false);
+      setState(() {
+        _tasks = tasks;
+        _failed = false;
+      });
+    } catch (error, stackTrace) {
+      if (!mounted || revision != _revision) return;
+      if (!_failed) logger.e('Could not load replay tasks', error: error, stackTrace: stackTrace);
+      setState(() => _failed = true);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Dialog(
-      child: SizedBox(
-        width: 580,
-        height: 520,
-        child: Column(children: [
-          //标题栏
+    final tasks = _tasks;
+    return Scaffold(
+      appBar: viewerAppBar(context, localizations.replayTasks, windowId: widget.windowId),
+      body: Column(children: [
+        if (_failed || (tasks?.any((task) => !task.isActive) ?? false))
           Padding(
-              padding: const EdgeInsets.only(left: 16, right: 8, top: 8, bottom: 8),
-              child: Row(children: [
-                Text(localizations.replayTasks,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-                const Expanded(child: SizedBox()),
-                if (manager.hasFinished)
-                  TextButton(
-                      onPressed: manager.clearFinished,
-                      child: Text(localizations.clearFinished)),
-                IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, size: 20)),
-              ])),
-          const Divider(height: 1, thickness: 0.5),
-          Expanded(
-            child: AnimatedBuilder(
-                animation: manager,
-                builder: (context, _) {
-                  if (manager.tasks.isEmpty) {
-                    return Center(
-                        child: Text(localizations.emptyData, style: Theme.of(context).textTheme.bodyMedium));
-                  }
-                  return ListView(children: manager.tasks.source.map(_tile).toList());
-                }),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(children: [
+              if (_failed) Text(localizations.fail, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              const Spacer(),
+              if (tasks?.any((task) => !task.isActive) ?? false)
+                TextButton(
+                  onPressed: _updating || _failed ? null : () => _update('clearFinished'),
+                  child: Text(localizations.clearFinished),
+                ),
+            ]),
           ),
-        ]),
-      ),
+        Expanded(
+          child: switch (tasks) {
+            null when !_failed => const Center(child: CircularProgressIndicator()),
+            null => const SizedBox(),
+            [] => Center(child: Text(localizations.emptyData)),
+            _ => ListView.builder(itemCount: tasks.length, itemBuilder: (_, index) => _tile(tasks[index])),
+          },
+        ),
+      ]),
     );
   }
 
-  Widget _tile(ReplayTask task) {
-    return AnimatedBuilder(
-        animation: task,
-        builder: (context, _) {
-          final color = Theme.of(context).colorScheme.primary.withValues(alpha: 0.65);
-          return ListTile(
+  Widget _tile(_ReplayTaskRow task) {
+    final color = Theme.of(context).colorScheme.primary;
+    final canUpdate = !_updating && !_failed;
+    return ListTile(
+            key: ValueKey(task.id),
             dense: true,
             visualDensity: const VisualDensity(vertical: -2),
-            leading: Text(task.request.method.name,
+            leading: Text(task.method,
                 style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500)),
-            title: Text(task.request.requestUrl,
+            title: Text(task.url,
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
             subtitle: Row(children: [
               _statusChip(task),
@@ -101,30 +150,29 @@ class _ReplayTasksDialogState extends State<ReplayTasksDialog> {
                       IconButton(
                           iconSize: 18,
                           tooltip: localizations.resume,
-                          onPressed: () => manager.resume(task),
+                          onPressed: canUpdate ? () => _update('resume', task.id) : null,
                           icon: const Icon(Icons.play_arrow_outlined))
                     else
                       IconButton(
                           iconSize: 18,
                           tooltip: localizations.pause,
-                          onPressed: () => manager.pause(task),
+                          onPressed: canUpdate ? () => _update('pause', task.id) : null,
                           icon: const Icon(Icons.pause_circle_outline)),
                     IconButton(
                         iconSize: 18,
                         tooltip: localizations.cancel,
-                        onPressed: () => manager.cancel(task),
+                        onPressed: canUpdate ? () => _update('cancel', task.id) : null,
                         icon: const Icon(Icons.cancel_outlined)),
                   ])
                 : IconButton(
                     iconSize: 18,
                     tooltip: localizations.delete,
-                    onPressed: () => manager.remove(task),
+                    onPressed: canUpdate ? () => _update('delete', task.id) : null,
                     icon: const Icon(Icons.delete_outline)),
           );
-        });
   }
 
-  Widget _statusChip(ReplayTask task) {
+  Widget _statusChip(_ReplayTaskRow task) {
     final (label, color) = switch (task.status) {
       ReplayTaskStatus.waiting => (localizations.statusWaiting, Colors.grey),
       ReplayTaskStatus.running => (localizations.statusRunning, Colors.blue),
@@ -139,4 +187,28 @@ class _ReplayTasksDialogState extends State<ReplayTasksDialog> {
     String two(int v) => v.toString().padLeft(2, '0');
     return "${two(time.hour)}:${two(time.minute)}:${two(time.second)}";
   }
+}
+
+class _ReplayTaskRow {
+  final String id;
+  final String method;
+  final String url;
+  final ReplayTaskStatus status;
+  final int executedCount;
+  final int totalCount;
+  final DateTime? nextRunAt;
+
+  _ReplayTaskRow.fromMap(Map<dynamic, dynamic> map)
+      : id = map['id'] as String,
+        method = map['method'] as String,
+        url = map['url'] as String,
+        status = ReplayTaskStatus.values.byName(map['status'] as String),
+        executedCount = map['executedCount'] as int,
+        totalCount = map['totalCount'] as int,
+        nextRunAt = switch (map['nextRunAt']) {
+          final int milliseconds => DateTime.fromMillisecondsSinceEpoch(milliseconds),
+          _ => null,
+        };
+
+  bool get isActive => status != ReplayTaskStatus.completed && status != ReplayTaskStatus.cancelled;
 }

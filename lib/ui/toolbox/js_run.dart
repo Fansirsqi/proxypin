@@ -4,7 +4,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:code_forge/code_forge.dart';
-import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:re_highlight/styles/monokai-sublime.dart';
 import 'package:flutter_js/flutter_js.dart';
@@ -15,6 +14,8 @@ import 'package:re_highlight/languages/javascript.dart';
 import 'package:proxypin/network/components/js/file.dart';
 import 'package:proxypin/network/components/js/md5.dart';
 import 'package:proxypin/network/components/js/xhr.dart';
+
+import 'viewer_app_bar.dart';
 
 class JavaScript extends StatefulWidget {
   final String? windowId;
@@ -83,7 +84,7 @@ class _JavaScriptState extends State<JavaScript> {
     Color primaryColor = Theme.of(context).colorScheme.primary;
     return Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: AppBar(title: const Text("JavaScript", style: TextStyle(fontSize: 16)), centerTitle: true),
+        appBar: viewerAppBar(context, 'JavaScript', windowId: widget.windowId),
         body: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTap: () {
@@ -143,7 +144,7 @@ class _JavaScriptState extends State<JavaScript> {
                     autoFocus: true,
                     enableGuideLines: false,
                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
-                    textStyle: codeTextStyle(size: 13),
+                    textStyle: const TextStyle(fontSize: 13),
                   )),
               Row(children: [
                 const SizedBox(width: 10),
@@ -162,19 +163,15 @@ class _JavaScriptState extends State<JavaScript> {
                   child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(10),
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: outLines.isEmpty
-                          ? Text(localizations.noOutputHint,
-                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant))
-                          : Scrollbar(
+                      color: Colors.grey.shade800,
+                      child: Scrollbar(
+                          controller: outputScrollController,
+                          thumbVisibility: true,
+                          trackVisibility: true,
+                          child: SingleChildScrollView(
                               controller: outputScrollController,
-                              thumbVisibility: true,
-                              trackVisibility: true,
-                              child: SingleChildScrollView(
-                                  controller: outputScrollController,
-                                  child: SelectionArea(
-                                      child:
-                                          Column(crossAxisAlignment: CrossAxisAlignment.start, children: outLines)))))),
+                              child: SelectionArea(
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: outLines)))))),
             ])));
   }
 }

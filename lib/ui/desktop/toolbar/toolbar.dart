@@ -24,7 +24,6 @@ import 'package:proxypin/ui/desktop/toolbar/phone_connect.dart';
 import 'package:proxypin/ui/desktop/toolbar/environment_switcher.dart';
 import 'package:proxypin/ui/desktop/toolbar/quick_tools.dart';
 import 'package:proxypin/ui/desktop/toolbar/weak_network_indicator.dart';
-import 'package:proxypin/ui/desktop/setting/setting.dart';
 import 'package:proxypin/ui/desktop/ssl/ssl.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/launch/launch.dart';
@@ -102,7 +101,6 @@ class _ToolbarState extends State<Toolbar> {
 
   @override
   Widget build(BuildContext context) {
-    // 设计稿 .toolbar：间距 6，图标 17px；顺序 代理/清空 | HTTPS | 快捷区 ⋯ / 手机 / 设置，右侧 弱网徽章 + 环境切换
     var iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
     return Row(children: [
       Padding(padding: EdgeInsets.only(left: Platform.isMacOS ? 90 : 20)),
@@ -130,8 +128,6 @@ class _ToolbarState extends State<Toolbar> {
             final ips = await localIps(readCache: false);
             phoneConnect(ips, widget.proxyServer.port);
           }),
-      const SizedBox(width: 6),
-      Setting(proxyServer: widget.proxyServer), // 设置
       const Spacer(),
       const WeakNetworkIndicator(), // 网络限制启用时显示徽章，未启用时隐藏
       const SizedBox(width: 6),

@@ -30,8 +30,6 @@ class JsonViewer extends StatelessWidget {
   final dynamic jsonObj;
   final ColorTheme colorTheme;
   final SearchTextController? searchController;
-
-  /// 基础字体（来自偏好设置里的「代码字体」）
   final TextStyle? textStyle;
 
   const JsonViewer(this.jsonObj, {super.key, required this.colorTheme, this.searchController, this.textStyle});
@@ -39,10 +37,10 @@ class JsonViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final matchKeys = <GlobalKey>[];
+    final style = textStyle ?? const TextStyle(fontWeight: FontWeight.w600);
     if (searchController == null) {
       return DefaultTextStyle.merge(
-          style: const TextStyle(fontWeight: FontWeight.w600).merge(textStyle),
-          child: getContentWidget(jsonObj, matchTotalCount: ValueWrap.of(0), matchKeys: matchKeys));
+          style: style, child: getContentWidget(jsonObj, matchTotalCount: ValueWrap.of(0), matchKeys: matchKeys));
     }
     return AnimatedBuilder(
         animation: searchController ?? ValueNotifier(0),
@@ -50,8 +48,7 @@ class JsonViewer extends StatelessWidget {
           final matchTotalCount = ValueWrap.of(0);
           matchKeys.clear();
           final contentWidget = DefaultTextStyle.merge(
-              style: const TextStyle(fontWeight: FontWeight.w600).merge(textStyle),
-              child: getContentWidget(jsonObj, matchTotalCount: matchTotalCount, matchKeys: matchKeys));
+              style: style, child: getContentWidget(jsonObj, matchTotalCount: matchTotalCount, matchKeys: matchKeys));
           WidgetsBinding.instance.addPostFrameCallback((_) {
             searchController?.updateMatchCount(matchTotalCount.get()!);
             scrollToMatch(matchKeys);
@@ -125,6 +122,7 @@ class JsonObjectViewerState extends State<JsonObjectViewer> {
     openFlag.clear();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     if (widget.notRoot) {
@@ -259,6 +257,7 @@ class _JsonArrayViewerState extends State<JsonArrayViewer> {
     openFlag.clear();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     if (widget.notRoot) {
@@ -357,7 +356,7 @@ Widget _getValueWidget(dynamic value, ColorTheme colorTheme,
     }
   } else {
     valueStr = 'Object';
-    style = const TextStyle(fontSize: 13);
+    style = const TextStyle();
   }
 
   if (searchController?.shouldSearch() == true) {

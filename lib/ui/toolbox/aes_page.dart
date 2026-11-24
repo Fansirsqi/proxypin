@@ -9,10 +9,13 @@ import '../component/text_field.dart';
 import '../../utils/aes.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 
+import 'viewer_app_bar.dart';
+
 class AesPage extends StatefulWidget {
   final String? text;
+  final String? windowId;
 
-  const AesPage({super.key, this.text});
+  const AesPage({super.key, this.text, this.windowId});
 
   @override
   State<AesPage> createState() => _AesWidgetState();
@@ -75,7 +78,7 @@ class _AesWidgetState extends State<AesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("AES", style: TextStyle(fontSize: 16)), centerTitle: true),
+      appBar: viewerAppBar(context, 'AES', windowId: widget.windowId),
       body: Padding(
         padding: const EdgeInsets.all(15),
         child: ListView(children: [

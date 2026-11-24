@@ -24,6 +24,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navRequests => 'Requests';
 
   @override
+  String get expandNavigation => 'Expand sidebar';
+
+  @override
+  String get collapseNavigation => 'Collapse sidebar';
+
+  @override
+  String get proxyBypassSeparatorHint => 'Separate entries with semicolons';
+
+  @override
   String get favorites => 'Favorites';
 
   @override
@@ -129,6 +138,30 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeColor => 'Theme Color';
 
   @override
+  String get themePrimary => 'Primary';
+
+  @override
+  String get themeSecondary => 'Secondary';
+
+  @override
+  String get themeTertiary => 'Tertiary';
+
+  @override
+  String get themeSurface => 'Surfaces';
+
+  @override
+  String get paletteClassic => 'Classic';
+
+  @override
+  String get paletteSoft => 'Soft';
+
+  @override
+  String get paletteVivid => 'Vivid';
+
+  @override
+  String get paletteNeutral => 'Neutral';
+
+  @override
   String get themeLight => 'Light';
 
   @override
@@ -154,13 +187,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get trayClosePromptContent =>
-      'Closing the window will keep ProxyPin running in the system tray. Do you want to minimize it now?';
+      'Minimize to keep ProxyPin running in the system status area, or exit to stop it.';
 
   @override
-  String get trayCloseExitAnyway => 'Exit anyway';
+  String get trayCloseExitAnyway => 'Exit';
 
   @override
-  String get trayCloseMinimizeToTray => 'Minimize to tray';
+  String get trayCloseMinimizeToTray => 'Minimize to status area';
+
+  @override
+  String get trayCloseTitle => 'Close ProxyPin';
+
+  @override
+  String get trayCloseAsk => 'Ask every time';
+
+  @override
+  String get trayCloseRemember => 'Remember my choice';
+
+  @override
+  String get windowCloseMinimize => 'Minimize window';
+
+  @override
+  String get windowClosePrompt => 'Minimize ProxyPin to the taskbar and keep it running, or exit the application.';
+
+  @override
+  String get jsonTreeView => 'Tree';
 
   @override
   String get copied => 'Copied to clipboard';
@@ -1483,13 +1534,64 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pinnedDragSort => 'Pinned (drag to reorder)';
 
   @override
-  String get pinToolsHint => 'All tools (tap + to pin to toolbar)';
+  String get pinToolsHint => 'All tools (select to pin)';
 
   @override
   String get image => 'Image';
 
   @override
   String get filtered => 'Filtered';
+
+  @override
+  String get detailLayoutSettings => 'Detail layout';
+
+  @override
+  String get detailTabAlignment => 'Tab bar alignment';
+
+  @override
+  String get detailTabLabelAlignment => 'Tab label alignment';
+
+  @override
+  String get detailAlignLeft => 'Left';
+
+  @override
+  String get detailAlignCenter => 'Center';
+
+  @override
+  String get detailAlignRight => 'Right';
+
+  @override
+  String get detailAlignTop => 'Top';
+
+  @override
+  String get detailAlignBottom => 'Bottom';
+
+  @override
+  String get detailHeaderDensity => 'Table row density';
+
+  @override
+  String get detailDensityComfortable => 'Comfortable';
+
+  @override
+  String get detailDensityCompact => 'Compact';
+
+  @override
+  String get detailDensityDense => 'Dense';
+
+  @override
+  String get detailCopyHeaderName => 'Copy key';
+
+  @override
+  String get detailCopyHeaderValue => 'Copy value';
+
+  @override
+  String get detailShowHeaderTable => 'Show header table';
+
+  @override
+  String get detailShowRawHeaders => 'Show raw headers';
+
+  @override
+  String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
   String get captureListDensity => 'Capture list density';

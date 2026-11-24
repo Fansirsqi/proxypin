@@ -19,16 +19,19 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_forge/code_forge.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/components/manager/environment_manager.dart';
 import 'package:proxypin/ui/component/chinese_font.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/window_resize_border.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/desktop/desktop.dart';
+import 'package:proxypin/ui/desktop/widgets/windows_toolbar.dart';
 import 'package:proxypin/ui/mobile/mobile.dart';
 import 'package:proxypin/utils/desktop_support.dart';
 import 'package:proxypin/utils/navigator.dart';
@@ -55,12 +58,24 @@ void main(List<String> args) async {
   var instance = AppConfiguration.instance;
 
   //多窗口
-  if (args.firstOrNull == 'multi_window') {
-    final windowId = windowController!.windowId;
+  final standaloneWindow = args.firstOrNull == DesktopMultiWindow.standaloneWindowArgument;
+  if (args.firstOrNull == 'multi_window' || standaloneWindow) {
+    final controller = windowController!;
+    final windowArguments =
+        standaloneWindow ? await DesktopMultiWindow.readStandaloneWindowArguments() : controller.arguments;
     final argument =
-        windowController.arguments.isEmpty ? const {} : jsonDecode(windowController.arguments) as Map<String, dynamic>;
+        windowArguments.isEmpty ? <String, dynamic>{} : jsonDecode(windowArguments) as Map<String, dynamic>;
     DesktopMultiWindow.initializeFromArguments(argument);
     var appConfiguration = await instance;
+    DesktopMultiWindow.onThemeChanged = appConfiguration.applyThemeSettings;
+    if (DesktopMultiWindow.themeSettings case final settings?) {
+      appConfiguration.applyThemeSettings(settings);
+    }
+    if (standaloneWindow) {
+      await windowManager.setPreventClose(true);
+      windowManager.addListener(_StandaloneCloseListener());
+      unawaited(DesktopMultiWindow.listenForStandaloneEvents());
+    }
 
     if (Platform.isMacOS) {
       windowManager.setTitleBarStyle(TitleBarStyle.hidden);
@@ -69,7 +84,12 @@ void main(List<String> args) async {
       windowManager.setBrightness(appConfiguration.themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light);
     }
     DesktopMultiWindow.prepareWindow();
-    runApp(FluentApp(multiWindow(windowId, argument), appConfiguration));
+    runApp(FluentApp(
+      multiWindow(controller.windowId, argument),
+      appConfiguration,
+      resizeBorder: standaloneWindow,
+      toolTitle: standaloneWindow ? DesktopMultiWindow.windowTitle : null,
+    ));
     return;
   }
 
@@ -86,16 +106,33 @@ void main(List<String> args) async {
   var appConfiguration = await instance;
   if (Platforms.isDesktop()) {
     await DesktopSupport.initialize(appConfiguration);
+    Map<String, dynamic>? lastTheme;
+    void syncTheme() {
+      final current = appConfiguration.themeSettings;
+      if (mapEquals(lastTheme, current)) return;
+      lastTheme = current;
+      unawaited(DesktopMultiWindow.updateTheme(current));
+    }
+
+    syncTheme();
+    appConfiguration.globalChange.addListener(syncTheme);
   }
 
   runApp(FluentApp(DesktopHomePage(await configuration, appConfiguration), appConfiguration));
 }
 
+class _StandaloneCloseListener with WindowListener {
+  @override
+  void onWindowClose() => unawaited(DesktopMultiWindow.closeStandaloneWindow());
+}
+
 class FluentApp extends StatelessWidget {
   final Widget home;
   final AppConfiguration appConfiguration;
+  final bool resizeBorder;
+  final String? toolTitle;
 
-  const FluentApp(this.home, this.appConfiguration, {super.key});
+  const FluentApp(this.home, this.appConfiguration, {super.key, this.resizeBorder = true, this.toolTitle});
 
   @override
   Widget build(BuildContext context) {
@@ -112,77 +149,63 @@ class FluentApp extends StatelessWidget {
             locale: appConfiguration.language,
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
-            // 无边框窗口（TitleBarStyle.hidden）没有系统 resize 热区，这里补一圈
-            builder: (context, child) => WindowResizeBorder(child: child ?? const SizedBox.shrink()),
+            builder: (_, child) {
+              Widget content = child!;
+              if (toolTitle case final title?) {
+                content = _StandaloneToolWindow(title: title, child: content);
+              }
+              return AppDisplaySettings(
+                configuration: appConfiguration,
+                child: resizeBorder ? WindowResizeBorder(child: content) : content,
+              );
+            },
             home: home,
           );
         });
   }
 
   ThemeData theme(Brightness brightness) {
-    bool useMaterial3 = appConfiguration.useMaterial3;
     bool isDark = brightness == Brightness.dark;
     bool useAmoled = isDark && appConfiguration.useAmoled;
-
-    Color? themeColor = isDark ? appConfiguration.themeColor : appConfiguration.themeColor;
-    Color? cardColor = isDark ? Color(0XFF3C3C3C) : Colors.white;
-    Color? surfaceContainer = isDark ? Colors.grey[800] : Colors.white;
-
-    Color? secondary = useMaterial3 ? null : themeColor;
-    if (themeColor is MaterialColor) {
-      secondary = themeColor[500];
-    }
-
-    var colorScheme = ColorScheme.fromSeed(
+    final colorScheme = appConfiguration.colorScheme(brightness);
+    final preset = appConfiguration.themePreset;
+    final hasPreset = preset != ThemePreset.custom;
+    var themeData = ThemeData(
       brightness: brightness,
-      seedColor: themeColor,
-      primary: themeColor,
-      surface: cardColor,
-      secondary: secondary,
-      onPrimary: isDark ? Colors.white : null,
-      surfaceContainer: surfaceContainer,
-      surfaceContainerHigh: surfaceContainer,
+      useMaterial3: appConfiguration.useMaterial3,
+      colorScheme: colorScheme,
+      extensions: [ActiveThemePreset(preset)],
+      canvasColor: hasPreset ? colorScheme.surface : null,
+      cardColor: hasPreset ? colorScheme.surfaceContainer : null,
+      hintColor: hasPreset ? colorScheme.onSurfaceVariant : null,
+      scaffoldBackgroundColor: appConfiguration.usesClassicSurfaces && !isDark && Platforms.isMobile()
+          ? colorScheme.surface
+          : colorScheme.surfaceContainerLow,
+      dividerColor: colorScheme.outlineVariant,
     );
 
-    // 浅色结构色严格按设计稿 token：--bg #F5F6F8 / --panel #FFF / --border #E4E6EB / --text-1/2/3
-    if (!isDark) {
-      colorScheme = colorScheme.copyWith(
-        surface: Colors.white,
-        onSurface: const Color(0xFF1F2329),
-        // onSurfaceVariant: const Color(0xFF646A73),
-        outlineVariant: const Color(0xFFE4E6EB),
-        surfaceContainerLow: const Color(0xFFF5F6F8),
-      );
-    } else {
-      // 暗黑结构色按设计稿 homepage-dark.html：--bg #1B1D22 / --panel #24262C / --border #36393F / --text-1/2/3
-      colorScheme = colorScheme.copyWith(
-        // 默认蓝（设计稿 #4A6CF7）在深底上偏暗，切换为暗黑设计稿 --primary #5D7CFA；用户自选主题色不干预
-        primary: appConfiguration.themeColor == const Color(0xFF4A6CF7) ? DarkPalette.primary : null,
-        surface: useAmoled ? Colors.black : DarkPalette.panel,
-        onSurface: DarkPalette.text1,
-        onSurfaceVariant: DarkPalette.text2,
-        outlineVariant: DarkPalette.border,
-        surfaceDim: useAmoled ? Colors.black : null,
-        surfaceBright: useAmoled ? Colors.black : null,
-        surfaceContainerLowest: useAmoled ? Colors.black : null,
-        surfaceContainerLow: useAmoled ? Colors.black : DarkPalette.bg,
-        surfaceContainer: useAmoled ? Colors.black : DarkPalette.panel,
-        surfaceContainerHigh: useAmoled ? Colors.black : DarkPalette.panel,
-        surfaceContainerHighest: useAmoled ? Colors.black : DarkPalette.panel,
-      );
+    if (Platform.isWindows) {
+      themeData = themeData.useSystemChineseFont();
     }
 
-    var themeData =
-        ThemeData(brightness: brightness, useMaterial3: appConfiguration.useMaterial3, colorScheme: colorScheme);
-    if (!isDark) {
-      themeData = themeData.copyWith(
-          // 手机端用户拍板全纯白；桌面端保留设计稿 #F5F6F8 窗口灰底
-          scaffoldBackgroundColor: Platforms.isMobile() ? Colors.white : const Color(0xFFF5F6F8),
-          dividerColor: const Color(0xFFE4E6EB));
-    } else {
-      themeData = themeData.copyWith(
-          scaffoldBackgroundColor: useAmoled ? Colors.black : DarkPalette.bg, dividerColor: DarkPalette.border);
-    }
+    final fontFamily = appConfiguration.appFontFamily;
+    final fontScale = appConfiguration.appFontScale;
+    final typography = themeData.typography;
+    themeData = themeData.copyWith(
+      textTheme: themeData.textTheme.apply(
+        fontFamily: fontFamily,
+        fontSizeFactor: fontScale,
+        bodyColor: hasPreset ? colorScheme.onSurface : null,
+        displayColor: hasPreset ? colorScheme.onSurface : null,
+      ),
+      primaryTextTheme: themeData.primaryTextTheme.apply(fontFamily: fontFamily, fontSizeFactor: fontScale),
+      typography: typography.copyWith(
+        englishLike: typography.englishLike.apply(fontSizeFactor: fontScale),
+        dense: typography.dense.apply(fontSizeFactor: fontScale),
+        tall: typography.tall.apply(fontSizeFactor: fontScale),
+      ),
+      visualDensity: appConfiguration.visualDensity,
+    );
 
     if (!appConfiguration.useMaterial3) {
       themeData = themeData.copyWith(
@@ -194,25 +217,10 @@ class FluentApp extends StatelessWidget {
         ),
         tabBarTheme: themeData.tabBarTheme.copyWith(
           labelColor: themeData.colorScheme.primary,
-          indicatorColor: themeColor,
+          indicatorColor: colorScheme.primary,
           unselectedLabelColor: themeData.textTheme.titleMedium?.color,
         ),
       );
-    }
-
-    if (Platform.isWindows) {
-      themeData = themeData.useSystemChineseFont();
-    }
-
-    // 整体界面字体 / 字号缩放 / 密度（代码窗口用的是 editorFontFamily，不受这里影响）
-    final appFontFamily = appConfiguration.appFontFamily;
-    final appFontScale = appConfiguration.appFontScale;
-    final hasFamily = appFontFamily != null && appFontFamily.isNotEmpty;
-    if (hasFamily || appFontScale != 1.0) {
-      TextTheme apply(TextTheme textTheme) =>
-          textTheme.apply(fontFamily: hasFamily ? appFontFamily : null, fontSizeFactor: appFontScale);
-      themeData = themeData.copyWith(
-          textTheme: apply(themeData.textTheme), primaryTextTheme: apply(themeData.primaryTextTheme));
     }
 
     if (useAmoled) {
@@ -225,8 +233,7 @@ class FluentApp extends StatelessWidget {
         bottomSheetTheme:
             themeData.bottomSheetTheme.copyWith(backgroundColor: Colors.black, surfaceTintColor: Colors.black),
         drawerTheme: themeData.drawerTheme.copyWith(backgroundColor: Colors.black, surfaceTintColor: Colors.black),
-        popupMenuTheme:
-            themeData.popupMenuTheme.copyWith(color: Colors.black, surfaceTintColor: Colors.black),
+        popupMenuTheme: themeData.popupMenuTheme.copyWith(color: Colors.black, surfaceTintColor: Colors.black),
         navigationBarTheme:
             themeData.navigationBarTheme.copyWith(backgroundColor: Colors.black, surfaceTintColor: Colors.black),
         navigationRailTheme: themeData.navigationRailTheme.copyWith(backgroundColor: Colors.black),
@@ -234,10 +241,39 @@ class FluentApp extends StatelessWidget {
     }
 
     return themeData.copyWith(
-        visualDensity: appConfiguration.visualDensity,
+        popupMenuTheme: hasPreset ? themeData.popupMenuTheme.copyWith(color: colorScheme.surfaceContainer) : null,
         dialogTheme: themeData.dialogTheme.copyWith(
-            backgroundColor: useAmoled ? Colors.black : null,
+            backgroundColor: useAmoled || hasPreset ? colorScheme.surface : null,
             surfaceTintColor: useAmoled ? Colors.black : null,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+  }
+}
+
+class _StandaloneToolWindow extends StatelessWidget {
+  final String title;
+  final Widget child;
+
+  const _StandaloneToolWindow({required this.title, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(children: [
+      Material(
+        color: desktopChromeColor(theme),
+        child: SizedBox(
+          height: 38,
+          child: WindowsToolbar(
+            iconSize: 24,
+            title: Padding(
+              padding: const EdgeInsets.only(left: 5),
+              child: Text(title, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ),
+      ),
+      Divider(height: 1, color: chromeBorderColor(theme)),
+      Expanded(child: child),
+    ]);
   }
 }

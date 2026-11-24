@@ -299,7 +299,7 @@ class _RewriteUpdateAddState extends State<RewriteUpdateAddDialog> {
                         editorTheme:
                             Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
                         enableGuideLines: false,
-                        textStyle: codeTextStyle(size: 14),
+                        textStyle: codeTextStyle(context, size: 14),
                       )),
                 ]))));
   }

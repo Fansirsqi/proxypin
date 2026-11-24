@@ -42,10 +42,10 @@ class _RequestBreakpointPageState extends State<RequestBreakpointPage> {
     }
   }
 
-  Future<void> _save() async {
-    await manager.save();
-    await _refreshConfig();
-  }
+  Future<void> _save() => DesktopMultiWindow.saveStandaloneChanges(() async {
+        await manager.save();
+        await _refreshConfig();
+      });
 
   Future<void> _import() async {
     final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
@@ -74,7 +74,8 @@ class _RequestBreakpointPageState extends State<RequestBreakpointPage> {
     if (exportRules.isEmpty) return;
 
     var json = exportRules.map((e) => e.toJson()).toList();
-    final outputFile = await FilePicker.saveFile(fileName: 'request_breakpoint_rules.json', bytes: utf8.encode(jsonEncode(json)));
+    final outputFile =
+        await FilePicker.saveFile(fileName: 'request_breakpoint_rules.json', bytes: utf8.encode(jsonEncode(json)));
     if (outputFile == null) return;
     try {
       if (mounted) CustomToast.success(localizations.exportSuccess).show(context);
@@ -127,10 +128,13 @@ class _RequestBreakpointPageState extends State<RequestBreakpointPage> {
 
     return Scaffold(
         backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-        appBar: AppBar(
-            title: Text(localizations.breakpoint, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            toolbarHeight: 36,
-            centerTitle: true),
+        appBar: DesktopMultiWindow.isStandalone
+            ? null
+            : AppBar(
+                title:
+                    Text(localizations.breakpoint, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                toolbarHeight: 36,
+                centerTitle: true),
         body: Center(
             child: Container(
                 padding: const EdgeInsets.only(left: 15, right: 10),

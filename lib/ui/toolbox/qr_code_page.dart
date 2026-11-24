@@ -33,6 +33,8 @@ import 'package:proxypin/ui/component/text_field.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'viewer_app_bar.dart';
+
 ///二维码
 ///@author Hongen Wang
 class QrCodePage extends StatefulWidget {
@@ -91,7 +93,7 @@ class _QrCodePageState extends State<QrCodePage> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     if (Platforms.isDesktop()) {
       return Scaffold(
-          appBar: AppBar(title: Text(localizations.qrCode, style: TextStyle(fontSize: 16)), centerTitle: true),
+          appBar: viewerAppBar(context, localizations.qrCode, windowId: widget.windowId),
           body: _QrEncode(windowId: widget.windowId));
     }
 

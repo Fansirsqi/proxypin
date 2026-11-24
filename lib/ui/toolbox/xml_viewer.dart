@@ -23,8 +23,7 @@ import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -33,6 +32,8 @@ import 'package:proxypin/utils/highlight_languages.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:xml/xml.dart';
+
+import 'viewer_app_bar.dart';
 
 /// XML 查看 / 格式化工具
 /// 跟 [JsonViewerPage] 风格一致，但只有文本视图：
@@ -163,18 +164,8 @@ class _XmlViewerPageState extends State<XmlViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    bool isNewWindows = widget.windowId != null && Platform.isWindows;
-
     return Scaffold(
-      appBar: isNewWindows
-          ? null
-          : PreferredSize(
-              preferredSize: Platforms.isDesktop() ? const Size.fromHeight(23) : const Size.fromHeight(36),
-              child: AppBar(
-                title: Text("XML Viewer", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w300)),
-                centerTitle: true,
-              ),
-            ),
+      appBar: viewerAppBar(context, 'XML Viewer', windowId: widget.windowId),
       body: Column(children: [
         Align(alignment: Alignment.centerRight, child: _toolbar()),
         const Divider(height: 1, thickness: 0.3),
@@ -218,15 +209,7 @@ class _XmlViewerPageState extends State<XmlViewerPage> {
   }
 
   Widget _textView() {
-    final isDark = Theme.brightnessOf(context) == Brightness.dark;
-    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
-    final pageBg = Theme.of(context).colorScheme.surface;
-    final editorTheme = isDark
-        ? {
-            ...baseTheme,
-            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
-          }
-        : baseTheme;
+    final editorTheme = codeEditorTheme(context);
 
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -235,13 +218,13 @@ class _XmlViewerPageState extends State<XmlViewerPage> {
         child: CodeForge(
           // CodeForge 的 lineWrap 是 late final，切换换行靠新 key 重建；
           // controller 在 State 里复用，文本不会丢。
-          key: ValueKey('xml-editor-wrap-$_wrap'),
+          key: ValueKey((_wrap, editorTheme['root'])),
           controller: _controller,
           lineWrap: _wrap,
           language: HighlightLanguages.getLanguage(ContentType.xml),
           enableGuideLines: false,
           editorTheme: editorTheme,
-          textStyle: codeTextStyle(size: 13),
+          textStyle: codeTextStyle(context, size: 13),
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
           selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
         ),

@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 
 class RequestBlock extends StatefulWidget {
   final RequestBlockManager requestBlockManager;
@@ -30,36 +32,25 @@ class RequestBlock extends StatefulWidget {
 
 class _RequestBlockState extends State<RequestBlock> {
   AppLocalizations get localizations => AppLocalizations.of(context)!;
-  bool changed = false;
 
-  @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
-  void dispose() {
-    if (changed) {
-      widget.requestBlockManager.flushConfig();
-    }
-    super.dispose();
-  }
+  Future<void> _save() => DesktopMultiWindow.saveStandaloneChanges(() async {
+        await widget.requestBlockManager.flushConfig();
+        await DesktopMultiWindow.invokeMainWindowMethod('refreshRequestBlock');
+      });
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-        titlePadding: const EdgeInsets.only(left: 20, top: 10, right: 15),
-        contentPadding: const EdgeInsets.only(left: 20, right: 20),
-        scrollable: true,
-        title: Row(children: [
-          const Expanded(child: SizedBox()),
-          Text(localizations.requestBlock, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-          const Expanded(child: SizedBox()),
-          Align(alignment: Alignment.topRight, child: CloseButton())
-        ]),
-        content: SizedBox(
-            width: 550,
-            height: 500,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyW, control: true): _close,
+        const SingleActivator(LogicalKeyboardKey.keyW, meta: true): _close,
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          appBar: DesktopMultiWindow.isStandalone ? null : AppBar(title: Text(localizations.requestBlock)),
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(15, 8, 15, 12),
             child: Column(children: [
               Row(children: [
                 const SizedBox(width: 8),
@@ -69,8 +60,8 @@ class _RequestBlockState extends State<RequestBlock> {
                     scale: 0.8,
                     value: widget.requestBlockManager.enabled,
                     onChanged: (value) {
-                      widget.requestBlockManager.enabled = value;
-                      changed = true;
+                      setState(() => widget.requestBlockManager.enabled = value);
+                      _save();
                     }),
                 const Expanded(child: SizedBox()),
                 TextButton.icon(
@@ -78,24 +69,34 @@ class _RequestBlockState extends State<RequestBlock> {
                 const SizedBox(width: 5),
               ]),
               const SizedBox(height: 8),
-              Container(
-                  height: 430,
-                  decoration: BoxDecoration(border: Border.all(color: Colors.grey.withOpacity(0.2))),
-                  child: Column(children: [
-                    const SizedBox(height: 5),
-                    Row(children: [
-                      Container(width: 15),
-                      const Expanded(child: Text('URL', style: TextStyle(fontSize: 14))),
-                      SizedBox(width: 80, child: Text(localizations.enable, style: const TextStyle(fontSize: 14))),
-                      Container(width: 18),
-                      SizedBox(width: 120, child: Text(localizations.action, style: const TextStyle(fontSize: 14))),
-                    ]),
-                    const Divider(thickness: 0.5),
-                    Expanded(
-                        child: ListView.builder(
-                            itemCount: widget.requestBlockManager.list.length, itemBuilder: (_, index) => row(index)))
-                  ]))
-            ])));
+              Expanded(
+                  child: Container(
+                      decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
+                      child: Column(children: [
+                        const SizedBox(height: 5),
+                        Row(children: [
+                          Container(width: 15),
+                          const Expanded(child: Text('URL', style: TextStyle(fontSize: 14))),
+                          SizedBox(width: 80, child: Text(localizations.enable, style: const TextStyle(fontSize: 14))),
+                          Container(width: 18),
+                          SizedBox(width: 120, child: Text(localizations.action, style: const TextStyle(fontSize: 14))),
+                        ]),
+                        const Divider(thickness: 0.5),
+                        Expanded(
+                            child: ListView.builder(
+                                itemCount: widget.requestBlockManager.list.length,
+                                itemBuilder: (_, index) => row(index)))
+                      ])))
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _close() {
+    final windowId = DesktopMultiWindow.currentWindowId;
+    if (windowId != null) WindowController.fromWindowId(windowId).close();
   }
 
   Widget row(int index) {
@@ -122,10 +123,8 @@ class _RequestBlockState extends State<RequestBlock> {
                     scale: 0.65,
                     value: list[index].enabled,
                     onChanged: (val) {
-                      list[index].enabled = val;
-                      setState(() {
-                        changed = true;
-                      });
+                      setState(() => list[index].enabled = val);
+                      _save();
                     }),
                 const SizedBox(width: 40),
                 SizedBox(
@@ -146,17 +145,16 @@ class _RequestBlockState extends State<RequestBlock> {
           height: 35,
           child: list[index].enabled ? Text(localizations.disabled) : Text(localizations.enable),
           onTap: () {
-            list[index].enabled = !list[index].enabled;
-            changed = true;
-            setState(() {});
+            setState(() => list[index].enabled = !list[index].enabled);
+            _save();
           }),
       const PopupMenuDivider(),
       PopupMenuItem(
           height: 35,
           child: Text(localizations.delete),
-          onTap: () async {
-            await widget.requestBlockManager.removeBlockRequest(index);
-            setState(() {});
+          onTap: () {
+            setState(() => list.removeAt(index));
+            _save();
           })
     ]);
   }
@@ -168,10 +166,9 @@ class _RequestBlockState extends State<RequestBlock> {
         builder: (BuildContext context) {
           return RequestBlockAddDialog(requestBlockManager: widget.requestBlockManager, index: index);
         }).then((value) {
-      if (value != null) {
-        setState(() {
-          changed = true;
-        });
+      if (value != null && mounted) {
+        setState(() {});
+        _save();
       }
     });
   }
@@ -237,7 +234,7 @@ class RequestBlockAddDialog extends StatelessWidget {
                 if (index != null) {
                   requestBlockManager.list[index!] = item;
                 } else {
-                  requestBlockManager.addBlockRequest(item);
+                  requestBlockManager.list.add(item);
                 }
                 Navigator.of(context).pop(item);
               }),

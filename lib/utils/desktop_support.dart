@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../network/util/logger.dart';
 import '../ui/component/multi_window.dart';
+import 'desktop_tray.dart';
 
 class DesktopSupport {
   static const _minimumWindowSize = Size(1000, 600);
@@ -57,6 +58,13 @@ class DesktopSupport {
       registerMethodHandler();
     } catch (e) {
       logger.e('Error during desktop initialization: $e');
+    }
+    if (Platform.isLinux) {
+      try {
+        await DesktopTrayManager.instance.ensureInitialized();
+      } catch (error, stackTrace) {
+        logger.e('Could not register the system tray icon', error: error, stackTrace: stackTrace);
+      }
     }
   }
 

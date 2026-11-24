@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,7 +6,6 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:proxypin/network/util/logger.dart';
-import 'package:proxypin/utils/navigator.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -20,7 +20,24 @@ class DesktopMultiWindow {
   static const String _windowSizeKey = '__windowSize';
   static const String _fromWindowIdKey = '__fromWindowId';
   static const String _argumentsKey = '__arguments';
+  static const String _themeKey = '__theme';
+  static const String _themeMethod = 'applyTheme';
   static const String _mainWindowChannelName = 'proxypin/main_window';
+  static const String standaloneWindowArgument = 'standalone_window';
+  static const String _standaloneRequestPrefix = 'proxypin:tool:';
+  static const _standaloneMethods = {
+    'getProxyInfo',
+    'getReplayTasks',
+    'updateReplayTask',
+    'refreshRequestRewrite',
+    'refreshRequestMap',
+    'refreshRequestBlock',
+    'refreshRequestCrypto',
+    'refreshRequestBreakpoint',
+    'refreshScript',
+    'openScriptConsole',
+    'registerConsoleLog',
+  };
 
   static final WindowMethodChannel _mainWindowChannel = WindowMethodChannel(
     _mainWindowChannelName,
@@ -34,8 +51,22 @@ class DesktopMultiWindow {
   static String? _windowTitle;
   static Size? _windowSize;
   static DesktopMultiWindowMethodHandler? _handler;
+  static final Map<String, Process> _standaloneProcesses = {};
+  static final Map<String, Process> _standaloneSingletons = {};
+  static StreamIterator<String>? _standaloneInput;
+  static Future<void> _standaloneQueue = Future.value();
+  static Completer<dynamic>? _standaloneReply;
+  static Future<void> _windowSaves = Future.value();
+  static bool _standaloneClosing = false;
+  static bool _standaloneDisconnected = false;
+  static Map<dynamic, dynamic>? _themeSettings;
+  static void Function(Map<dynamic, dynamic>)? onThemeChanged;
+  static void Function(String)? onStandaloneClosed;
 
   static String? get currentWindowId => _currentWindowId;
+  static String? get windowTitle => _windowTitle;
+  static bool get isStandalone => _standaloneInput != null;
+  static Map<dynamic, dynamic>? get themeSettings => _themeSettings;
 
   static Future<WindowController> ensureInitialized({String? mainWindowId}) async {
     await windowManager.ensureInitialized();
@@ -57,6 +88,7 @@ class DesktopMultiWindow {
     _mainWindowScreenScale = scale is num && _validScale(scale.toDouble()) ? scale.toDouble() : null;
     _windowTitle = arguments.remove(_windowTitleKey) as String?;
     _windowSize = _sizeFromJson(arguments.remove(_windowSizeKey));
+    _themeSettings = arguments.remove(_themeKey) as Map?;
   }
 
   /// [size] 使用 Flutter 逻辑尺寸，由子窗口按目标显示器的 DPI 换算。
@@ -66,6 +98,165 @@ class DesktopMultiWindow {
       arguments: configurationArguments,
       hiddenAtLaunch: true,
     ));
+  }
+
+  static Future<void> launchStandaloneWindow(
+    String title,
+    Size size,
+    Map<String, dynamic> pageArguments, {
+    bool singleton = false,
+  }) async {
+    final name = pageArguments['name'] as String;
+    final existing = _standaloneSingletons[name];
+    if (singleton && existing != null) {
+      _sendStandaloneEvent(existing, 'window_focus', null);
+      return;
+    }
+    final arguments = jsonEncode({
+      ...pageArguments,
+      _windowTitleKey: title,
+      _windowSizeKey: {'width': size.width, 'height': size.height},
+      _themeKey: _themeSettings,
+    });
+    final process = await Process.start(Platform.resolvedExecutable, [standaloneWindowArgument]);
+    final id = 'tool:${process.pid}';
+    _standaloneProcesses[id] = process;
+    if (singleton) _standaloneSingletons[name] = process;
+    process.stdin.done.ignore();
+    process.stdin.writeln(arguments);
+    if (_themeSettings case final settings?) {
+      _sendStandaloneEvent(process, _themeMethod, settings);
+    }
+    process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) async {
+      if (!line.startsWith(_standaloneRequestPrefix)) {
+        print(line);
+        return;
+      }
+      try {
+        final request = jsonDecode(line.substring(_standaloneRequestPrefix.length)) as Map<String, dynamic>;
+        final method = request['method'] as String;
+        final handler = _handler;
+        if (handler == null || !_standaloneMethods.contains(method)) {
+          throw UnsupportedError(method);
+        }
+        final result = await handler(MethodCall(method, request['arguments']), id);
+        process.stdin.writeln(jsonEncode({'result': result}));
+      } catch (error) {
+        process.stdin.writeln(jsonEncode({'error': error.toString()}));
+      }
+    }, onError: (Object error, StackTrace stackTrace) {
+      logger.e('Tool output failed', error: error, stackTrace: stackTrace);
+    });
+    process.stderr.listen(stderr.add, onError: (Object error, StackTrace stackTrace) {
+      logger.e('Tool error output failed', error: error, stackTrace: stackTrace);
+    });
+    unawaited(process.exitCode.then((code) {
+      process.stdin.close().ignore();
+      _standaloneProcesses.remove(id);
+      if (_standaloneSingletons[name] == process) _standaloneSingletons.remove(name);
+      onStandaloneClosed?.call(id);
+      if (code != 0 && !_standaloneClosing) {
+        logger.e('Tool window ${pageArguments['name']} exited with code $code');
+      }
+    }));
+  }
+
+  static Future<void> closeStandaloneWindows() async {
+    _standaloneClosing = true;
+    final processes = _standaloneProcesses.values.toList();
+    for (final process in processes) {
+      _sendStandaloneEvent(process, 'window_close', null);
+    }
+    await Future.wait(processes.map((process) async {
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        process.kill();
+        await process.exitCode;
+      }
+    }));
+  }
+
+  static Future<String> readStandaloneWindowArguments() async {
+    final input = StreamIterator(stdin.transform(utf8.decoder).transform(const LineSplitter()));
+    _standaloneInput = input;
+    return await input.moveNext() ? input.current : '';
+  }
+
+  static Future<void> listenForStandaloneEvents() async {
+    final input = _standaloneInput!;
+    try {
+      while (await input.moveNext()) {
+        final message = jsonDecode(input.current) as Map<String, dynamic>;
+        if (message['event'] case final String event) {
+          unawaited(_handleWindowEvent(MethodCall(event, message['arguments'])).then<void>((_) {},
+              onError: (Object error, StackTrace stackTrace) {
+            logger.e('Tool window event failed', error: error, stackTrace: stackTrace);
+          }));
+        } else {
+          final reply = _standaloneReply;
+          _standaloneReply = null;
+          if (message['error'] case final String error) {
+            reply?.completeError(PlatformException(code: 'standalone_window', message: error));
+          } else {
+            reply?.complete(message['result']);
+          }
+        }
+      }
+    } finally {
+      _standaloneDisconnected = true;
+      final reply = _standaloneReply;
+      _standaloneReply = null;
+      reply?.completeError(StateError('Main window disconnected'));
+      await closeStandaloneWindow();
+    }
+  }
+
+  static Future<T?> _invokeStandalone<T>(String method, dynamic arguments) {
+    final reply = _standaloneQueue.then((_) async {
+      if (_standaloneDisconnected) throw StateError('Main window disconnected');
+      final pending = Completer<dynamic>();
+      _standaloneReply = pending;
+      stdout.writeln('$_standaloneRequestPrefix${jsonEncode({'method': method, 'arguments': arguments})}');
+      return await pending.future as T?;
+    });
+    _standaloneQueue = reply.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return reply;
+  }
+
+  static void _sendStandaloneEvent(Process process, String event, dynamic arguments) {
+    process.stdin.writeln(jsonEncode({'event': event, 'arguments': arguments}));
+  }
+
+  static Future<void> updateTheme(Map<String, dynamic> settings) async {
+    _themeSettings = settings;
+    for (final process in _standaloneProcesses.values) {
+      _sendStandaloneEvent(process, _themeMethod, settings);
+    }
+    for (final window in await WindowController.getAll()) {
+      if (!identical(_themeSettings, settings)) return;
+      if (window.windowId == _currentWindowId) continue;
+      try {
+        await window.invokeMethod(_themeMethod, settings);
+      } on WindowChannelException {
+        // A window can close while the list is being read.
+      }
+    }
+  }
+
+  static Future<void> saveStandaloneChanges(Future<void> Function() save) {
+    final operation = _windowSaves.then((_) => save());
+    _windowSaves = operation.then<void>((_) {}, onError: (Object error, StackTrace stackTrace) {
+      logger.e('Saving tool changes failed', error: error, stackTrace: stackTrace);
+    });
+    return operation;
+  }
+
+  static Future<void> closeStandaloneWindow() async {
+    if (_standaloneClosing) return;
+    _standaloneClosing = true;
+    await _windowSaves;
+    await windowManager.destroy();
   }
 
   /// 首帧初始化 Flutter surface 后调整隐藏窗口，并等待 resize 后的帧完成再显示。
@@ -126,6 +317,9 @@ class DesktopMultiWindow {
   }
 
   static Future<T?> invokeMainWindowMethod<T>(String method, [dynamic arguments]) async {
+    if (isStandalone && _standaloneMethods.contains(method)) {
+      return _invokeStandalone<T>(method, arguments);
+    }
     return _mainWindowChannel.invokeMethod<T>(method, {
       _fromWindowIdKey: _currentWindowId,
       _argumentsKey: arguments,
@@ -135,6 +329,11 @@ class DesktopMultiWindow {
   static Future<T?> invokeMethod<T>(Object windowId, String method, [dynamic arguments]) async {
     if (windowId.toString() == '0') {
       return invokeMainWindowMethod<T>(method, arguments);
+    }
+
+    if (_standaloneProcesses[windowId] case final process?) {
+      _sendStandaloneEvent(process, method, arguments);
+      return null;
     }
 
     final targetWindowId = _resolveWindowId(windowId);
@@ -193,6 +392,9 @@ class DesktopMultiWindow {
         }
         if (size != null) {
           context[_windowSizeKey] = {'width': size.width, 'height': size.height};
+        }
+        if (_themeSettings case final settings?) {
+          context[_themeKey] = settings;
         }
         return jsonEncode(context);
       }
@@ -322,36 +524,30 @@ class DesktopMultiWindow {
   }
 
   static Future<void> _setWindowMethodHandler(WindowController controller) {
-    return controller.setWindowMethodHandler((call) async {
-      switch (call.method) {
-        case 'window_close':
-          return windowManager.close();
-        case 'window_focus':
-          // 最小化（含 macOS 缩到 Dock）先还原，再置顶聚焦
-          if (await windowManager.isMinimized()) {
-            await windowManager.restore();
-          }
-          return windowManager.focus();
-      }
+    return controller.setWindowMethodHandler(_handleWindowEvent);
+  }
 
-      return _handleMethodCall(call);
-    });
+  static Future<dynamic> _handleWindowEvent(MethodCall call) async {
+    switch (call.method) {
+      case 'window_close':
+        return isStandalone ? closeStandaloneWindow() : windowManager.close();
+      case 'window_focus':
+        if (await windowManager.isMinimized()) {
+          await windowManager.restore();
+        }
+        return windowManager.focus();
+      case _themeMethod:
+        _themeSettings = call.arguments as Map;
+        onThemeChanged?.call(_themeSettings!);
+        return null;
+      default:
+        return _handleMethodCall(call);
+    }
   }
 }
 
 extension WindowControllerCompat on WindowController {
   Future<void> close() {
-    // windowId == '0' 表示“没有真实子窗口”（Linux 内嵌打开 / 移动端）：
-    // 直接关掉当前路由，页面里的关闭按钮才有反应。
-    if (windowId == '0') {
-      // 内嵌路由：直接关闭当前路由；没有可关的页面时静默忽略（不要走 platform channel，
-      // 否则会抛 WindowChannelException: CHANNEL_UNREGISTERED）。
-      final navigator = navigatorHelper.navigatorKey.currentState;
-      if (navigator != null && navigator.canPop()) {
-        navigator.pop();
-      }
-      return Future.value();
-    }
     return _invokeWindowMethod('window_close');
   }
 

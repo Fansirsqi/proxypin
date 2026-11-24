@@ -14,6 +14,8 @@ import '../component/json/json_viewer.dart';
 import '../component/json/theme.dart';
 
 /// Simple WebSocket request page: connect to ws/wss URL, send text, view messages
+import 'viewer_app_bar.dart';
+
 class WebSocketRequestPage extends StatefulWidget {
   final String? windowId; // optional for desktop multi-window
   const WebSocketRequestPage({super.key, this.windowId});
@@ -237,19 +239,19 @@ class _WebSocketRequestPageState extends State<WebSocketRequestPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final clearMessages = IconButton(
+      tooltip: 'Clear messages',
+      icon: const Icon(Icons.delete),
+      onPressed: _clearMessages,
+    );
     // Use a Stack so we can place a custom-styled "jump to latest" button
     return Scaffold(
-      appBar: AppBar(
-          title: Text('WebSocket', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-          centerTitle: true,
-          actions: [
-            IconButton(
-              tooltip: 'Clear messages',
-              icon: const Icon(Icons.delete),
-              onPressed: () => _clearMessages(),
-            ),
-            SizedBox(width: 8),
-          ]),
+      appBar: viewerAppBar(
+        context,
+        'WebSocket',
+        windowId: widget.windowId,
+        actions: [clearMessages, const SizedBox(width: 8)],
+      ),
       body: Stack(children: [
         // main content
         Column(children: [

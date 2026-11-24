@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:highlight/highlight.dart' show Node, highlight;
+import 'package:proxypin/ui/component/theme_presets.dart';
 
 import 'search_controller.dart';
+
+typedef HighlightDocumentInput = ({
+  String text,
+  String? language,
+  TextStyle? style,
+  Brightness brightness,
+  ThemePreset preset,
+  SearchSettings? search,
+});
 
 class HighlightTextDocument {
   final String text;
@@ -32,17 +40,30 @@ class HighlightTextDocument {
     String? language,
     TextStyle? style,
     required SearchTextController searchController,
-  }) {
-    final rootStyle = highlightRootStyle(context, style);
-    final segments = buildHighlightBaseSegments(context, text, language: language, style: style);
-    final matches = buildSearchMatches(text, searchController);
+  }) =>
+      HighlightTextDocument.prepare((
+        text: text,
+        language: language,
+        style: style,
+        brightness: Theme.brightnessOf(context),
+        preset: ActiveThemePreset.of(context),
+        search: searchController.shouldSearch() ? searchController.value : null,
+      ));
+
+  factory HighlightTextDocument.prepare(HighlightDocumentInput input) {
+    final theme = input.preset.syntax(input.brightness);
+    final defaultStyle = theme['root'] ?? const TextStyle(fontFamily: 'monospace', fontSize: 14.5);
+    final rootStyle = _stripBackground(defaultStyle.merge(input.style));
+    final baseStyle = input.preset == ThemePreset.custom ? input.style : rootStyle;
+    final segments = _buildHighlightBaseSegments(input.text, input.language, baseStyle, theme);
+    final matches = _buildSearchMatches(input.text, input.search);
     final lines = buildHighlightDocumentLines(segments);
     final groupedMatches = _groupMatchesByLine(lines, matches);
-    final currentMatchIndex = matches.isEmpty ? -1 : searchController.currentMatchIndex.value.clamp(0, matches.length - 1);
+    final currentMatchIndex = matches.isEmpty ? -1 : input.search!.currentMatchIndex.clamp(0, matches.length - 1);
     final matchLineIndexes = _buildMatchLineIndexes(groupedMatches, matches.length);
 
     return HighlightTextDocument._(
-      text: text,
+      text: input.text,
       rootStyle: rootStyle,
       segments: segments,
       matches: matches,
@@ -142,26 +163,18 @@ class HighlightTextDocument {
   }
 }
 
-TextStyle highlightRootStyle(BuildContext context, [TextStyle? style]) {
-  final theme = Theme.brightnessOf(context) == Brightness.light ? atomOneLightTheme : atomOneDarkTheme;
-  return _stripBackground((theme['root'] ?? const TextStyle(fontFamily: 'monospace', fontSize: 14.5)).merge(style)) ??
-      const TextStyle(fontFamily: 'monospace', fontSize: 14.5);
-}
-
-List<HighlightStyledSegment> buildHighlightBaseSegments(
-  BuildContext context,
-  String text, {
+List<HighlightStyledSegment> _buildHighlightBaseSegments(
+  String text,
   String? language,
   TextStyle? style,
-}) {
+  Map<String, TextStyle> theme,
+) {
   if (!(language?.isNotEmpty ?? false)) {
     return [HighlightStyledSegment(text: text, style: _stripBackground(style))];
   }
 
   try {
     final parsed = highlight.parse(text, language: language).nodes ?? const <Node>[];
-    final theme = Theme.brightnessOf(context) == Brightness.light ? atomOneLightTheme : atomOneDarkTheme;
-
     List<HighlightStyledSegment> convert(List<Node> nodes, [TextStyle? inheritedStyle]) {
       final spans = <HighlightStyledSegment>[];
       for (final node in nodes) {
@@ -180,7 +193,7 @@ List<HighlightStyledSegment> buildHighlightBaseSegments(
       return spans;
     }
 
-    final result = convert(parsed);
+    final result = convert(parsed, style);
     if (result.isNotEmpty) {
       return result;
     }
@@ -189,20 +202,12 @@ List<HighlightStyledSegment> buildHighlightBaseSegments(
   return [HighlightStyledSegment(text: text, style: _stripBackground(style))];
 }
 
-List<HighlightSearchMatch> buildSearchMatches(String text, SearchTextController searchController) {
-  if (!searchController.shouldSearch()) {
-    return const [];
-  }
-
-  final pattern = searchController.value.pattern;
-  if (pattern.isEmpty) {
-    return const [];
-  }
+List<HighlightSearchMatch> _buildSearchMatches(String text, SearchSettings? search) {
+  if (search == null || search.pattern.isEmpty) return const [];
 
   try {
-    final regex = searchController.value.isRegExp
-        ? RegExp(pattern, caseSensitive: searchController.value.isCaseSensitive)
-        : RegExp(RegExp.escape(pattern), caseSensitive: searchController.value.isCaseSensitive);
+    final regex =
+        RegExp(search.isRegExp ? search.pattern : RegExp.escape(search.pattern), caseSensitive: search.isCaseSensitive);
 
     final matches = <HighlightSearchMatch>[];
     var index = 0;
@@ -271,11 +276,11 @@ List<List<HighlightSearchMatch>> _groupMatchesByLine(
   List<HighlightDocumentLine> lines,
   List<HighlightSearchMatch> matches,
 ) {
-  final grouped = List.generate(lines.length, (_) => <HighlightSearchMatch>[]);
   if (matches.isEmpty || lines.isEmpty) {
-    return grouped;
+    return List.filled(lines.length, const <HighlightSearchMatch>[]);
   }
 
+  final grouped = List.generate(lines.length, (_) => <HighlightSearchMatch>[]);
   var lineIndex = 0;
   for (final match in matches) {
     while (lineIndex < lines.length && lines[lineIndex].end <= match.start) {

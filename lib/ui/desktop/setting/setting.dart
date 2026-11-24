@@ -14,332 +14,245 @@
  * limitations under the License.
  */
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/bin/server.dart';
-import 'package:proxypin/network/components/manager/hosts_manager.dart';
-import 'package:proxypin/network/components/manager/network_condition_manager.dart';
-import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/network/util/system_proxy.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/proxy_port_setting.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
-import 'package:proxypin/ui/component/widgets.dart';
+import 'package:proxypin/ui/configuration.dart';
+import 'package:proxypin/ui/content/detail_settings.dart';
+import 'package:proxypin/ui/desktop/preference.dart';
 import 'package:proxypin/ui/desktop/setting/about.dart';
-import 'package:proxypin/ui/desktop/setting/external_proxy.dart';
-import 'package:proxypin/ui/desktop/setting/hosts.dart';
-import 'package:proxypin/ui/desktop/setting/request_block.dart';
-import 'package:proxypin/ui/desktop/setting/weak_network.dart';
-import 'package:proxypin/ui/desktop/toolbar/mcp_panel.dart';
+import 'package:proxypin/ui/desktop/setting/environment.dart';
+import 'package:proxypin/ui/desktop/ssl/ssl.dart';
+import 'package:proxypin/ui/desktop/toolbar/quick_tools.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'filter.dart';
-
-///设置菜单
-/// @author wanghongen
-/// 2023/10/8
-class Setting extends StatefulWidget {
+class Setting extends StatelessWidget {
   final ProxyServer proxyServer;
+  final AppConfiguration appConfiguration;
 
-  const Setting({super.key, required this.proxyServer});
-
-  @override
-  State<Setting> createState() => _SettingState();
-}
-
-class _SettingState extends State<Setting> {
-  late Configuration configuration;
-
-  /// 设置菜单控制器（自建以便在菜单内容里注册 Esc 关闭动作）
-  final MenuController _menuController = MenuController();
-
-  AppLocalizations get localizations => AppLocalizations.of(context)!;
-
-  @override
-  void initState() {
-    configuration = widget.proxyServer.configuration;
-    super.initState();
-  }
+  const Setting({super.key, required this.proxyServer, required this.appConfiguration});
 
   @override
   Widget build(BuildContext context) {
-    return MenuAnchor(
-      controller: _menuController,
-      builder: (context, controller, child) {
-        return IconButton(
-            // 设计稿 .tbtn：32x32 点击盒
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            padding: EdgeInsets.zero,
-            icon: SvgIcon('gear', size: 17, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            tooltip: localizations.setting,
-            onPressed: () {
-              if (controller.isOpen) {
-                controller.close();
-              } else {
-                controller.open();
-              }
-            });
-      },
-      // 旧版全部平铺（含流量控制 6 项）；底部保留「自定义快捷工具栏…」入口。
-      // 包一层 Actions 注册 DismissIntent：独立 MenuAnchor 的菜单面板有 Esc→DismissIntent 快捷键，
-      // 但 SDK 只为 MenuBar 内的 anchor 注册 DismissMenuAction，独立 anchor 缺了它导致 Esc 关不掉菜单。
-      menuChildren: [
-        Actions(
-            actions: {
-              DismissIntent: CallbackAction<DismissIntent>(onInvoke: (intent) {
-                _menuController.close();
-                return null;
-              })
-            },
-            // 自带 autofocus 焦点节点：菜单打开即获得 Esc 按键事件，不依赖 SDK 是否把焦点移进菜单
-            child: Focus(
-                autofocus: true,
-                onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.escape) {
-                    _menuController.close();
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _ProxyMenu(proxyServer: widget.proxyServer),
-              item(localizations.domainFilter, onPressed: hostFilter),
-              item(localizations.hosts, onPressed: hosts),
-              item(localizations.requestBlock, onPressed: showRequestBlock),
-              item(localizations.requestRewrite, onPressed: requestRewrite),
-              item(localizations.requestMap, onPressed: requestMap),
-              item(localizations.requestCrypto, onPressed: showRequestCrypto),
-              item(localizations.script,
-                  onPressed: () =>
-                      MultiWindow.openWindow(localizations.script, 'ScriptWidget', size: const Size(800, 780))),
-              item(localizations.breakpoint, onPressed: requestBreakpoint),
-              item(localizations.weakNetwork, onPressed: showWeakNetwork),
-              item(localizations.externalProxy, onPressed: setExternalProxy),
-              item(localizations.mcpService, onPressed: () => McpServiceDialog.show(context, widget.proxyServer)),
-              item(localizations.about, onPressed: showAbout),
-            ]))),
-      ],
+    final labels = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final sections = [
+      (
+        title: labels.preference,
+        content: Column(
+          children: [
+            Preference(appConfiguration, proxyServer.configuration),
+            const Divider(height: 24),
+            _SettingsLink(
+              label: labels.about,
+              icon: 'info',
+              onTap: () => showDialog<void>(context: context, builder: (_) => const DesktopAbout()),
+            ),
+            _SettingsLink(
+              label: labels.feedback,
+              icon: 'chat',
+              onTap: () => launchUrl(Uri.parse('https://github.com/wanghongenpin/proxypin/issues')),
+            ),
+          ],
+        ),
+      ),
+      (title: labels.detailLayoutSettings, content: DetailLayoutSettings(configuration: appConfiguration)),
+      (
+        title: labels.proxy,
+        content: Column(
+          children: [
+            _ProxySettings(proxyServer: proxyServer),
+            const Divider(height: 24),
+            SslWidget(proxyServer: proxyServer, settingsTile: true),
+            for (final tool in settingQuickTools) _toolLink(context, labels, tool),
+          ],
+        ),
+      ),
+      (
+        title: labels.trafficControl,
+        content: Column(
+          children: [
+            for (final tool in trafficQuickTools) _toolLink(context, labels, tool),
+            _SettingsLink(
+              label: labels.environmentVariables,
+              icon: 'sliders',
+              onTap: () => showEnvironmentDialog(context),
+            ),
+          ],
+        ),
+      ),
+      (title: labels.customizeToolbar, content: ToolbarSettings(appConfiguration: appConfiguration)),
+    ];
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      backgroundColor: theme.colorScheme.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 660,
+        height: 620,
+        child: DefaultTabController(
+          length: sections.length,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 7, 8, 4),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(labels.setting, style: theme.textTheme.titleLarge)),
+                    const CloseButton(),
+                  ],
+                ),
+              ),
+              TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                onTap: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+                tabs: [for (final section in sections) Tab(height: 40, text: section.title)],
+              ),
+              Expanded(
+                child: TabBarView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    for (var sectionIndex = 0; sectionIndex < sections.length; sectionIndex++)
+                      SingleChildScrollView(
+                        key: PageStorageKey(sectionIndex),
+                        primary: false,
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                        child: sections[sectionIndex].content,
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget item(String text, {VoidCallback? onPressed}) {
-    return MenuItemButton(
-        trailingIcon: const Icon(Icons.arrow_right),
-        onPressed: onPressed,
-        child: Padding(
-            padding: const EdgeInsets.only(left: 10, right: 5),
-            child: Text(text, style: const TextStyle(fontSize: 14))));
-  }
-
-  ///请求重写
-  void requestRewrite() {
-    MultiWindow.openWindow(localizations.requestRewrite, 'RequestRewriteWidget', size: const Size(800, 750));
-  }
-
-  ///断点
-  void requestBreakpoint() {
-    MultiWindow.openWindow(localizations.breakpoint, 'RequestBreakpointPage', size: const Size(800, 750));
-  }
-
-  ///请求映射
-  void requestMap() {
-    MultiWindow.openWindow(localizations.requestMap, 'RequestMapPage', size: const Size(800, 720));
-  }
-
-  ///请求加密
-  void showRequestCrypto() {
-    MultiWindow.openWindow(localizations.requestCrypto, 'RequestCryptoPage', size: const Size(820, 750));
-  }
-
-  ///请求屏蔽
-  void showRequestBlock() async {
-    var requestBlockManager = await RequestBlockManager.instance;
-    if (!mounted) return;
-    showDialog(
-        barrierDismissible: false,
-        context: context,
-        builder: (context) => RequestBlock(requestBlockManager: requestBlockManager));
-  }
-
-  void showAbout() {
-    showDialog(context: context, builder: (context) => DesktopAbout());
-  }
-
-  ///设置外部代理地址
-  void setExternalProxy() {
-    showDialog(
-        barrierDismissible: false,
-        context: context,
-        builder: (context) {
-          return ExternalProxyDialog(configuration: widget.proxyServer.configuration);
-        });
-  }
-
-  ///show域名过滤Dialog
-  void hostFilter() {
-    showDialog(
-        barrierDismissible: false, context: context, builder: (context) => FilterDialog(configuration: configuration));
-  }
-
-  ///show域名过滤Dialog
-  void hosts() async {
-    var hosts = await HostsManager.instance;
-    if (!mounted) return;
-    showDialog(barrierDismissible: false, context: context, builder: (context) => HostsDialog(hostsManager: hosts));
-  }
-
-  void showWeakNetwork() async {
-    var manager = await NetworkConditionManager.instance;
-    if (!mounted) return;
-    showDialog(
-        barrierDismissible: false,
-        context: context,
-        builder: (context) => WeakNetworkDialog(manager: manager));
+  Widget _toolLink(BuildContext context, AppLocalizations labels, QuickTool tool) {
+    return _SettingsLink(
+      label: tool.name(labels),
+      icon: tool.icon,
+      onTap: () async {
+        await tool.launch(context, proxyServer);
+        managerStateVersion.value++;
+      },
+    );
   }
 }
 
-///代理菜单
-class _ProxyMenu extends StatefulWidget {
+class _SettingsLink extends StatelessWidget {
+  final String label;
+  final String icon;
+  final VoidCallback onTap;
+
+  const _SettingsLink({required this.label, required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+      leading: SvgIcon(icon, color: colors.onSurfaceVariant),
+      title: Text(label, style: Theme.of(context).textTheme.titleSmall),
+      trailing: Icon(Icons.chevron_right, size: 18, color: colors.onSurfaceVariant),
+      onTap: onTap,
+    );
+  }
+}
+
+class _ProxySettings extends StatefulWidget {
   final ProxyServer proxyServer;
 
-  const _ProxyMenu({required this.proxyServer});
+  const _ProxySettings({required this.proxyServer});
 
   @override
-  State<StatefulWidget> createState() => _ProxyMenuState();
+  State<_ProxySettings> createState() => _ProxySettingsState();
 }
 
-class _ProxyMenuState extends State<_ProxyMenu> {
-  var textEditingController = TextEditingController();
-
-  late Configuration configuration;
-  bool changed = false;
-
-  AppLocalizations get localizations => AppLocalizations.of(context)!;
-
-  @override
-  void initState() {
-    configuration = widget.proxyServer.configuration;
-    textEditingController.text = configuration.proxyPassDomains;
-    super.initState();
-  }
+class _ProxySettingsState extends State<_ProxySettings> {
+  late final configuration = widget.proxyServer.configuration;
+  late final bypassController = TextEditingController(text: configuration.proxyPassDomains);
 
   @override
   void dispose() {
-    if (configuration.proxyPassDomains != textEditingController.text) {
-      changed = true;
-      configuration.proxyPassDomains = textEditingController.text;
+    if (configuration.proxyPassDomains != bypassController.text) {
+      configuration.proxyPassDomains = bypassController.text;
       SystemProxy.setProxyPassDomains(configuration.proxyPassDomains);
-    }
-
-    if (changed) {
       configuration.flushConfig();
     }
-    textEditingController.dispose();
+    bypassController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    bool isEn = localizations.localeName.startsWith("en");
-    return SubmenuButton(
-      menuChildren: [
-        PortWidget(proxyServer: widget.proxyServer, textStyle: const TextStyle(fontSize: 13)),
-        const Divider(thickness: 0.3, height: 8),
-        setSystemProxy(),
-        const Divider(thickness: 0.3, height: 8),
-        Row(children: [
-          Expanded(
-              child: Padding(
-                  padding: const EdgeInsets.only(left: 15),
-                  child: Text("SOCKS5", style: const TextStyle(fontSize: 14)))),
-          SwitchWidget(
-              value: configuration.enableSocks5,
-              scale: 0.75,
-              onChanged: (val) {
-                configuration.enableSocks5 = val;
-                changed = true;
-              }),
-          SizedBox(width: 10)
-        ]),
-        const Divider(thickness: 0.3, height: 8),
-        Row(children: [
-          Expanded(
-              child: Padding(
-                  padding: const EdgeInsets.only(left: 15),
-                  child: Text(localizations.enabledHTTP2, style: const TextStyle(fontSize: 14)))),
-          SwitchWidget(
-              value: configuration.enabledHttp2,
-              scale: 0.75,
-              onChanged: (val) {
-                configuration.enabledHttp2 = val;
-                changed = true;
-              }),
-          SizedBox(width: 10)
-        ]),
-        const Divider(thickness: 0.3, height: 8),
-        const SizedBox(height: 3),
-        Padding(
-            padding: const EdgeInsets.only(left: 15),
-            child: Row(children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(localizations.proxyIgnoreDomain, style: const TextStyle(fontSize: 14)),
-                  const SizedBox(height: 3),
-                  Text(isEn ? "Use ';' to separate multiple entries": "多个使用;分割", style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-                ],
-              ),
-              Padding(
-                  padding: const EdgeInsets.only(left: 35),
-                  child: TextButton(
-                    child: Text(localizations.reset),
-                    onPressed: () {
-                      textEditingController.text = SystemProxy.proxyPassDomains;
-                    },
-                  ))
-            ])),
-        const SizedBox(height: 5),
-        Padding(
-            padding: const EdgeInsets.only(left: 15, right: 5),
-            child: TextField(
-                textInputAction: TextInputAction.done,
-                style: const TextStyle(fontSize: 13),
-                controller: textEditingController,
-                decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.all(10),
-                    border: OutlineInputBorder(),
-                    constraints: BoxConstraints(minWidth: 190, maxWidth: 190)),
-                maxLines: 5,
-                minLines: 1)),
-        const SizedBox(height: 10),
+    final labels = AppLocalizations.of(context)!;
+    final style = Theme.of(context).textTheme.titleSmall;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PortWidget(proxyServer: widget.proxyServer, textStyle: style),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('${labels.setAs}${labels.systemProxy}', style: style),
+          value: configuration.enableSystemProxy,
+          onChanged: (value) {
+            widget.proxyServer.setSystemProxyEnable(value);
+            setState(() => configuration.enableSystemProxy = value);
+            configuration.flushConfig();
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('SOCKS5', style: style),
+          value: configuration.enableSocks5,
+          onChanged: (value) {
+            setState(() => configuration.enableSocks5 = value);
+            configuration.flushConfig();
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(labels.enabledHTTP2, style: style),
+          value: configuration.enabledHttp2,
+          onChanged: (value) {
+            setState(() => configuration.enabledHttp2 = value);
+            configuration.flushConfig();
+          },
+        ),
+        Row(
+          children: [
+            Expanded(child: Text(labels.proxyIgnoreDomain, style: style)),
+            TextButton(
+              onPressed: () => bypassController.text = SystemProxy.proxyPassDomains,
+              child: Text(labels.reset),
+            ),
+          ],
+        ),
+        TextField(
+          controller: bypassController,
+          textInputAction: TextInputAction.done,
+          minLines: 1,
+          maxLines: 5,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            helperText: labels.proxyBypassSeparatorHint,
+            helperMaxLines: 2,
+            contentPadding: const EdgeInsets.all(12),
+          ),
+        ),
       ],
-      // 不带 leadingIcon：与菜单内其他项保持一致（设计稿分组菜单项无图标）
-      child: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: Text(localizations.proxy, style: const TextStyle(fontSize: 14))),
     );
-  }
-
-  ///设置系统代理
-  Widget setSystemProxy() {
-    return Row(children: [
-      Expanded(
-          child: Padding(
-              padding: const EdgeInsets.only(left: 15, right: 20),
-              child: Text(localizations.setAs + localizations.systemProxy, style: const TextStyle(fontSize: 14)))),
-      Transform.scale(
-          scale: 0.75,
-          child: Switch(
-              hoverColor: Colors.transparent,
-              value: configuration.enableSystemProxy,
-              onChanged: (val) {
-                widget.proxyServer.setSystemProxyEnable(val);
-                configuration.enableSystemProxy = val;
-                setState(() {
-                  changed = true;
-                });
-              })),
-      SizedBox(width: 10)
-    ]);
   }
 }

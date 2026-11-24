@@ -22,8 +22,7 @@ import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/channel/host_port.dart';
@@ -40,6 +39,7 @@ import 'package:proxypin/ui/component/split_view.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/body.dart';
+import 'package:proxypin/ui/toolbox/viewer_app_bar.dart';
 import 'package:proxypin/utils/curl.dart';
 import 'package:proxypin/utils/highlight_languages.dart';
 import 'package:proxypin/utils/form_url.dart';
@@ -110,6 +110,8 @@ class RequestEditorState extends State<RequestEditor> {
   }
 
   bool onKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (ModalRoute.of(context)?.isCurrent == false) return false;
     if ((HardwareKeyboard.instance.isMetaPressed ||
             HardwareKeyboard.instance.isControlPressed ||
             HardwareKeyboard.instance.isAltPressed) &&
@@ -119,11 +121,14 @@ class RequestEditorState extends State<RequestEditor> {
     }
 
     //cmd+w 关闭窗口
-    if ((HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed) &&
+    if (widget.windowController != null &&
+        (HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed) &&
         event.logicalKey == LogicalKeyboardKey.keyW) {
-      HardwareKeyboard.instance.removeHandler(onKeyEvent);
-      responseChange.dispose();
-      widget.windowController?.close();
+      if (widget.source == RequestEditorSource.editor) {
+        widget.windowController?.close();
+      } else {
+        _completeBreakpoint(close: true);
+      }
       return true;
     }
 
@@ -139,14 +144,8 @@ class RequestEditorState extends State<RequestEditor> {
 
   @override
   void dispose() {
-    if ((widget.source == RequestEditorSource.breakpointRequest ||
-            widget.source == RequestEditorSource.breakpointResponse) &&
-        !executed) {
-      if (widget.source == RequestEditorSource.breakpointRequest) {
-        widget.onExecuteRequest?.call(null);
-      } else {
-        widget.onExecuteResponse?.call(null);
-      }
+    if (widget.source != RequestEditorSource.editor) {
+      _completeBreakpoint();
     }
 
     HardwareKeyboard.instance.removeHandler(onKeyEvent);
@@ -156,6 +155,8 @@ class RequestEditorState extends State<RequestEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final hasWindowTitle =
+        widget.source == RequestEditorSource.editor && hasToolWindowTitle(widget.windowController?.windowId);
     var title = localizations.httpRequest;
     var buttonText = localizations.send;
     IconData icon = Icons.send;
@@ -172,7 +173,7 @@ class RequestEditorState extends State<RequestEditor> {
 
     return Scaffold(
         appBar: AppBar(
-          title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          title: hasWindowTitle ? null : Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
           toolbarHeight: Platform.isWindows ? 36 : null,
           centerTitle: true,
           actions: [
@@ -186,25 +187,20 @@ class RequestEditorState extends State<RequestEditor> {
                 },
                 icon: Icon(icon),
                 label: Text(buttonText)),
-            if (widget.source == RequestEditorSource.breakpointRequest ||
-                widget.source == RequestEditorSource.breakpointResponse)
+            if (widget.source != RequestEditorSource.editor)
               TextButton.icon(
-                  onPressed: () {
-                    // ignore breakpoint
-                    if (widget.source == RequestEditorSource.breakpointRequest) {
-                      widget.onExecuteRequest?.call(null);
-                    } else {
-                      widget.onExecuteResponse?.call(null);
-                    }
-                    widget.windowController?.close();
-                  },
+                  onPressed: () => _completeBreakpoint(close: true),
                   icon: const Icon(Icons.cancel),
                   label: Text(localizations.cancel)),
             const SizedBox(width: 10)
           ],
         ),
         body: Column(children: [
-          _RequestLine(key: requestLineKey, request: request, urlQueryNotifier: _queryNotifier),
+          _RequestLine(
+            key: requestLineKey,
+            request: request,
+            urlQueryNotifier: _queryNotifier,
+          ),
           Expanded(
               child: VerticalSplitView(
             ratio: 0.53,
@@ -271,23 +267,26 @@ class RequestEditorState extends State<RequestEditor> {
     responseKey.currentState?.change(null);
     responseChange.value = 0;
 
-    Map? proxyResult = await DesktopMultiWindow.invokeMainWindowMethod('getProxyInfo');
-    ProxyInfo? proxyInfo = proxyResult == null ? null : ProxyInfo.of(proxyResult['host'], proxyResult['port']);
-
-    HttpClients.proxyRequest(request, proxyInfo: proxyInfo, timeout: Duration(seconds: 30)).then((response) {
-      this.response = response;
-      responseKey.currentState?.change(response);
+    try {
+      final proxyResult = await DesktopMultiWindow.invokeMainWindowMethod<Map>('getProxyInfo');
+      if (!mounted) return;
+      final proxyInfo = proxyResult == null ? null : ProxyInfo.of(proxyResult['host'], proxyResult['port']);
+      final result =
+          await HttpClients.proxyRequest(request, proxyInfo: proxyInfo, timeout: const Duration(seconds: 30));
+      if (!mounted) return;
+      response = result;
+      responseKey.currentState?.change(result);
       responseChange.value = 1;
-      // if (mounted) FlutterToastr.show(localizations.requestSuccess, context);
-    }).catchError((e, stackTrace) {
-      logger.e("Request failed", error: e, stackTrace: stackTrace);
+    } catch (error, stackTrace) {
+      logger.e("Request failed", error: error, stackTrace: stackTrace);
+      if (!mounted) return;
       responseChange.value = -1;
-      if (mounted) FlutterToastr.show('${localizations.fail}$e', context);
-    });
+      FlutterToastr.show('${localizations.fail}$error', context);
+    }
   }
 
   void executeBreakpoint() {
-    executed = true;
+    if (executed) return;
     if (widget.source == RequestEditorSource.breakpointRequest) {
       var currentState = requestLineKey.currentState!;
       var bodyBytes = requestKey.currentState?.getBodyBytes();
@@ -301,7 +300,7 @@ class RequestEditorState extends State<RequestEditor> {
       newRequest.headers.clear();
       newRequest.headers.addAll(headers);
       newRequest.body = bodyBytes;
-      widget.onExecuteRequest?.call(newRequest);
+      _completeBreakpoint(request: newRequest, close: true);
     } else if (widget.source == RequestEditorSource.breakpointResponse) {
       var bodyBytes = responseKey.currentState?.getBodyBytes();
       var headers = responseKey.currentState?.getHeaders();
@@ -312,7 +311,27 @@ class RequestEditorState extends State<RequestEditor> {
       newResponse.headers.clear();
       newResponse.headers.addAll(headers);
       newResponse.body = bodyBytes;
-      widget.onExecuteResponse?.call(newResponse);
+      _completeBreakpoint(response: newResponse, close: true);
+    }
+  }
+
+  Future<void> _completeBreakpoint({HttpRequest? request, HttpResponse? response, bool close = false}) async {
+    if (executed) return;
+    executed = true;
+    try {
+      if (widget.source == RequestEditorSource.breakpointRequest) {
+        await widget.onExecuteRequest?.call(request);
+      } else {
+        await widget.onExecuteResponse?.call(response);
+      }
+      if (close && mounted) {
+        await widget.windowController?.close();
+      }
+    } catch (error, stack) {
+      logger.e('Failed to complete the breakpoint', error: error, stackTrace: stack);
+      if (mounted && close) {
+        executed = false;
+      }
     }
   }
 
@@ -472,8 +491,7 @@ class _HttpState extends State<_HttpWidget> {
       case _BodyLanguage.formUrl:
         return FormUrl.buildBytes(formData);
       case _BodyLanguage.formData:
-        headerKey.currentState
-            ?.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
+        headerKey.currentState?.setParam('Content-Type', 'multipart/form-data; boundary=$_boundary');
         return Multipart.buildBytes(formData, boundary: _boundary);
       default:
         final text = body?.text ?? '';
@@ -610,7 +628,8 @@ class _HttpState extends State<_HttpWidget> {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _bodyToolbar(),
         const SizedBox(height: 3),
-        Expanded(child: FormBodyEditor(
+        Expanded(
+            child: FormBodyEditor(
           key: formEditorKey,
           form: formData,
           allowFiles: _bodyLanguage == _BodyLanguage.formData,
@@ -622,15 +641,7 @@ class _HttpState extends State<_HttpWidget> {
     final isNone = _bodyLanguage == _BodyLanguage.none;
     final ct = _bodyLanguageToContentType[_bodyLanguage];
     final language = ct == null ? null : HighlightLanguages.getLanguage(ct);
-    final isDark = Theme.brightnessOf(context) == Brightness.dark;
-    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
-    final pageBg = Theme.of(context).colorScheme.surface;
-    final editorTheme = isDark
-        ? {
-            ...baseTheme,
-            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
-          }
-        : baseTheme;
+    final editorTheme = codeEditorTheme(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8, right: 10, bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -650,7 +661,7 @@ class _HttpState extends State<_HttpWidget> {
                     // CodeForge 把 language 当作 late final 在 initState 里固定，
                     // 切换数据类型后必须靠新的 key 重建组件才能让高亮实时生效；
                     // controller 由本 State 持有，重建不会丢文本。
-                    key: ValueKey('body-editor-${_bodyLanguage.name}-$_bodyWrap'),
+                    key: ValueKey((_bodyLanguage, _bodyWrap, editorTheme['root'])),
                     controller: body!,
                     autoFocus: true,
                     lineWrap: _bodyWrap,
@@ -658,7 +669,7 @@ class _HttpState extends State<_HttpWidget> {
                     enableGuideLines: false,
                     selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
                     editorTheme: editorTheme,
-                    textStyle: codeTextStyle(size: 14.2),
+                    textStyle: codeTextStyle(context, size: 14.2),
                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
                   ),
                 ),
@@ -706,8 +717,8 @@ class _HttpState extends State<_HttpWidget> {
               onPressed: () => formEditorKey.currentState?.addTextField(),
               icon: const Icon(Icons.text_fields, size: 16),
               // 中文"添加文本"不空格，英文"Add Text"需空格
-              label: Text(isCN ? '${localizations.add}${localizations.text}'
-                  : '${localizations.add} ${localizations.text}',
+              label: Text(
+                  isCN ? '${localizations.add}${localizations.text}' : '${localizations.add} ${localizations.text}',
                   style: const TextStyle(fontSize: 12.5)),
             ),
             if (_bodyLanguage == _BodyLanguage.formData)
@@ -808,7 +819,6 @@ class _HttpState extends State<_HttpWidget> {
 class _RequestLine extends StatefulWidget {
   final HttpRequest? request;
   final UrlQueryNotifier? urlQueryNotifier;
-
   const _RequestLine({super.key, this.request, this.urlQueryNotifier});
 
   @override
@@ -869,7 +879,7 @@ class _RequestLineState extends State<_RequestLine> {
     return TextField(
         controller: requestUrl,
         decoration: InputDecoration(
-            prefix: Padding(
+            prefixIcon: Padding(
               padding: const EdgeInsets.only(right: 6),
               child: MethodPopupMenu(
                 value: requestMethod,

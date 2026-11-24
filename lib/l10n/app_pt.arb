@@ -10,8 +10,7 @@
   "pause": "Pausar",
   "resume": "Retomar",
   "overview": "Visão geral",
-  "mcpAuthEnabled": "Exigir token de acesso"
-,
+  "mcpAuthEnabled": "Exigir token de acesso",
   "captureListDensity": "Densidade da lista",
   "densityComfortable": "Confortável",
   "densityCompact": "Compacta",

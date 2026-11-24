@@ -38,7 +38,7 @@ class _AppFontFamilyTileState extends State<AppFontFamilyTile> {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
     final current = config?.appFontFamily;
 
     final items = <DropdownMenuItem<String?>>[
@@ -123,7 +123,7 @@ class AppFontScaleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
     final current = config?.appFontScale ?? 1.0;
     final values = scales.contains(current) ? scales : ([...scales, current]..sort());
 
@@ -165,7 +165,7 @@ class UiDensityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
 
     return ListTile(
       contentPadding: EdgeInsets.zero,

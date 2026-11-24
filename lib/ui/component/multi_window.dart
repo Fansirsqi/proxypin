@@ -21,6 +21,7 @@ import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
+import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/network/components/manager/request_crypto_manager.dart';
 import 'package:proxypin/network/components/manager/request_breakpoint_manager.dart';
 import 'package:proxypin/network/components/manager/request_map_manager.dart';
@@ -39,8 +40,11 @@ import 'package:proxypin/ui/desktop/setting/request_rewrite.dart';
 import 'package:proxypin/ui/desktop/setting/script.dart';
 import 'package:proxypin/ui/toolbox/aes_page.dart';
 import 'package:proxypin/utils/platform.dart';
+import 'package:proxypin/utils/replay_task.dart';
 
+import '../desktop/left_menus/replay_tasks.dart';
 import '../desktop/setting/request_breakpoint.dart';
+import '../desktop/setting/request_block.dart';
 import '../desktop/setting/request_crypto.dart';
 import '../desktop/setting/request_map.dart';
 import '../toolbox/cert_hash.dart';
@@ -101,6 +105,10 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
         RequestRewriteManager.instance, (data) => RequestRewriteWidget(windowId: windowId, requestRewrites: data));
   }
 
+  if (argument['name'] == 'RequestBlock') {
+    return futureWidget(RequestBlockManager.instance, (manager) => RequestBlock(requestBlockManager: manager));
+  }
+
   // 请求加密
   if (argument['name'] == 'RequestCryptoPage') {
     return futureWidget(RequestCryptoManager.instance, (data) => RequestCryptoPage(windowId: windowId, manager: data));
@@ -152,7 +160,7 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
   }
 
   if (argument['name'] == 'AesPage') {
-    return AesPage(text: argument['text']);
+    return AesPage(text: argument['text'], windowId: windowId);
   }
 
   //脚本日志
@@ -162,6 +170,10 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
 
   if (argument['name'] == 'WebSocketRequestPage') {
     return WebSocketRequestPage(windowId: windowId);
+  }
+
+  if (argument['name'] == 'ReplayTasksPage') {
+    return ReplayTasksPage(windowId: windowId);
   }
 
   if (argument['name'] == 'BreakpointExecutor') {
@@ -196,6 +208,7 @@ class MultiWindow {
   /// 单例型子窗口（编辑共享配置的管理器页）：重复打开时前置已有窗口而不是再开一个，
   /// 避免多个窗口各自加载/保存同一配置互相覆盖，导致编辑静默丢失
   static const Set<String> _singletonWidgets = {
+    'RequestBlock',
     'RequestRewriteWidget',
     'RequestMapPage',
     'RequestCryptoPage',
@@ -211,14 +224,20 @@ class MultiWindow {
   /// 刷新请求重写
   static Future<void> invokeRefreshRewrite(Operation operation,
       {int? index, RequestRewriteRule? rule, List<RewriteItem>? items, bool? enabled, List<int>? order}) async {
-    await DesktopMultiWindow.invokeMainWindowMethod("refreshRequestRewrite", {
+    final arguments = {
       "enabled": enabled,
       "operation": operation.name,
       'index': index,
       'rule': rule?.toJson(),
       'items': items?.map((e) => e.toJson()).toList(),
       'order': order
-    });
+    };
+    Future<void> refresh() async {
+      final path = await DesktopMultiWindow.invokeMainWindowMethod<String>("refreshRequestRewrite", arguments);
+      if (DesktopMultiWindow.isStandalone && rule != null && path != null) rule.rewritePath = path;
+    }
+
+    await DesktopMultiWindow.saveStandaloneChanges(refresh);
   }
 
   static Future<WindowController> openWindow(String title, String widgetName,
@@ -226,20 +245,6 @@ class MultiWindow {
     if (Platform.isAndroid || Platform.isIOS) {
       onOpenWindow?.call(widgetName, args);
       return WindowController.fromWindowId('0'); // Dummy controller
-    }
-
-    // Linux：Impeller 后端下同一进程里的第二个 FlutterEngine 拿不到 GL 上下文
-    // （子窗口空白，关闭时 GLX 报 BadAccess 直接把进程干掉），所以改成在主窗口里
-    // 用路由打开同样的页面，顺带也去掉了“GTK 标题栏 + 页面标题栏”的双标题栏。
-    if (Platform.isLinux) {
-      if (onOpenWindow != null) {
-        // 子窗口路径是 jsonEncode 后传给新 engine 的，内嵌路径同样先归一化，
-        // 免得多窗口页面收到的是 HttpRequest/HttpMessage 对象而不是 Map。
-        onOpenWindow!(widgetName, args == null ? null : jsonDecode(jsonEncode(args)) as Map<String, dynamic>);
-      } else {
-        logger.w('MultiWindow.onOpenWindow not registered, cannot open $widgetName');
-      }
-      return WindowController.fromWindowId('0');
     }
 
     if (_singletonWidgets.contains(widgetName)) {
@@ -259,6 +264,26 @@ class MultiWindow {
       );
     } finally {
       _openingWidgets.remove(widgetName);
+    }
+  }
+
+  static Future<void> openToolWindow(String title, String widgetName,
+      {Size size = const Size(800, 680), Map<String, dynamic>? args}) async {
+    final standalone = Platform.isLinux;
+    final singleton = _singletonWidgets.contains(widgetName);
+    if (standalone && singleton && !_openingWidgets.add(widgetName)) return;
+    try {
+      if (standalone) {
+        registerMethodHandler();
+        await DesktopMultiWindow.launchStandaloneWindow(title, size, {'name': widgetName, ...?args},
+            singleton: singleton);
+      } else {
+        await openWindow(title, widgetName, size: size, args: args);
+      }
+    } catch (error, stackTrace) {
+      logger.e('Failed to open $widgetName', error: error, stackTrace: stackTrace);
+    } finally {
+      if (standalone && singleton) _openingWidgets.remove(widgetName);
     }
   }
 
@@ -294,8 +319,10 @@ class MultiWindow {
 
   static bool _refreshRewrite = false;
 
-  static Future<void> _handleRefreshRewrite(Operation operation, Map<dynamic, dynamic> arguments) async {
+  static Future<String?> _handleRefreshRewrite(Operation operation, Map<dynamic, dynamic> arguments,
+      {required bool persist}) async {
     RequestRewriteManager requestRewrites = await RequestRewriteManager.instance;
+    String? path;
 
     switch (operation) {
       case Operation.add:
@@ -309,6 +336,7 @@ class MultiWindow {
         } else {
           await requestRewrites.updateRule(arguments['index'], rule, items);
         }
+        path = rule.rewritePath;
         break;
       case Operation.delete:
         var rule = requestRewrites.rules.removeAt(arguments['index']);
@@ -330,12 +358,17 @@ class MultiWindow {
         break;
     }
 
-    if (_refreshRewrite) return;
+    if (persist) {
+      await requestRewrites.flushRequestRewriteConfig();
+      return path;
+    }
+    if (_refreshRewrite) return path;
     _refreshRewrite = true;
     Future.delayed(const Duration(milliseconds: 1000), () async {
       _refreshRewrite = false;
       requestRewrites.flushRequestRewriteConfig();
     });
+    return path;
   }
 }
 
@@ -345,20 +378,67 @@ bool _registerHandler = false;
 /// 观察者（如工具栏快捷图标启用态高亮）据此刷新
 final ValueNotifier<int> managerStateVersion = ValueNotifier<int>(0);
 
+Map<String, dynamic>? _currentProxyInfo() {
+  final server = ProxyServer.current;
+  if (server == null || !server.isRunning) return null;
+  return {'host': '127.0.0.1', 'port': server.port};
+}
+
 /// 桌面端多窗口 注册方法处理器
 void registerMethodHandler() {
   if (_registerHandler) {
     return;
   }
   _registerHandler = true;
+  DesktopMultiWindow.onStandaloneClosed = ScriptManager.removeLogHandler;
   DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
-    logger.d('${call.method} $fromWindowId');
-
     if (call.method == 'getProxyInfo') {
-      return ProxyServer.current?.isRunning == true ? {'host': '127.0.0.1', 'port': ProxyServer.current!.port} : null;
+      return _currentProxyInfo();
     }
+    if (call.method == 'getReplayTasks' || call.method == 'updateReplayTask') {
+      final manager = ReplayTaskManager.instance;
+      if (call.method == 'updateReplayTask') {
+        final action = call.arguments['action'];
+        if (action == 'clearFinished') {
+          manager.clearFinished();
+        } else {
+          final task = manager.tasks.where((task) => task.id == call.arguments['id']).firstOrNull;
+          if (task != null) {
+            switch (action) {
+              case 'pause':
+                manager.pause(task);
+              case 'resume':
+                manager.resume(task);
+              case 'cancel':
+                manager.cancel(task);
+              case 'delete':
+                if (!task.isActive) manager.remove(task);
+            }
+          }
+        }
+      }
+      return manager.tasks
+          .map((task) => {
+                'id': task.id,
+                'method': task.request.method.name,
+                'url': task.request.requestUrl,
+                'status': task.status.name,
+                'executedCount': task.executedCount,
+                'totalCount': task.totalCount,
+                'nextRunAt': task.nextRunAt?.millisecondsSinceEpoch,
+              })
+          .toList(growable: false);
+    }
+    logger.d('${call.method} $fromWindowId');
     if (call.method == 'refreshRequestRewrite') {
-      await MultiWindow._handleRefreshRewrite(Operation.of(call.arguments['operation']), call.arguments);
+      final path = await MultiWindow._handleRefreshRewrite(Operation.of(call.arguments['operation']), call.arguments,
+          persist: fromWindowId.startsWith('tool:'));
+      managerStateVersion.value++;
+      return path;
+    }
+
+    if (call.method == 'refreshRequestBlock') {
+      await (await RequestBlockManager.instance).reloadConfig();
       managerStateVersion.value++;
       return 'done';
     }
@@ -400,6 +480,11 @@ void registerMethodHandler() {
       return "done";
     }
 
+    if (call.method == 'openScriptConsole') {
+      await openScriptConsoleWindow(call.arguments as String);
+      return 'done';
+    }
+
     if (call.method == 'resumeRequest') {
       var request = call.arguments['request'] == null
           ? null
@@ -432,8 +517,12 @@ Future<void> encodeWindow(EncoderType type, BuildContext context, [String? text]
 
   if (!context.mounted) return;
   final title = AppLocalizations.of(context)!.encode;
-  await MultiWindow.openWindow(title, 'EncoderWidget',
-      size: const Size(900, 600), args: {'type': type.name, 'text': text});
+  await MultiWindow.openToolWindow(
+    title,
+    'EncoderWidget',
+    args: {'type': type.name, 'text': text},
+    size: const Size(900, 600),
+  );
 }
 
 ///打开 AES 窗口
@@ -443,10 +532,18 @@ Future<void> openAesWindow(BuildContext context, String text) async {
     return;
   }
 
-  await MultiWindow.openWindow('AES', 'AesPage', size: const Size(700, 672), args: {'text': text});
+  await MultiWindow.openToolWindow(
+    'AES',
+    'AesPage',
+    args: {'text': text},
+    size: const Size(700, 672),
+  );
 }
 
-Future<void> openScriptConsoleWindow() async {
-  // 单例：WindowController.openWindow 内部会去重（_singletonWidgets），Linux 上退化成内嵌路由
-  await MultiWindow.openWindow('Script Console', 'ScriptConsoleWidget', size: const Size(900, 650));
+Future<void> openScriptConsoleWindow(String title) async {
+  if (DesktopMultiWindow.isStandalone) {
+    await DesktopMultiWindow.invokeMainWindowMethod('openScriptConsole', title);
+    return;
+  }
+  await MultiWindow.openToolWindow(title, 'ScriptConsoleWidget', size: const Size(900, 650));
 }

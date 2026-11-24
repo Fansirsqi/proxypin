@@ -63,7 +63,7 @@ async function onRequest(context, request) {
           language: langJavascript,
           editorTheme: monokaiSublimeTheme,
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
-          textStyle: codeTextStyle(size: 13),
+          textStyle: codeTextStyle(context, size: 13),
         ));
   }
 }

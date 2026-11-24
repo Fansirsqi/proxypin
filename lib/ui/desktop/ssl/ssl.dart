@@ -9,6 +9,7 @@ import 'package:proxypin/network/util/crts.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
+import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/desktop/ssl/client_cert.dart';
 import 'package:proxypin/ui/desktop/ssl/pc_cert.dart';
 import 'package:proxypin/utils/ip.dart';
@@ -17,8 +18,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 class SslWidget extends StatefulWidget {
   final ProxyServer proxyServer;
+  final bool settingsTile;
 
-  const SslWidget({super.key, required this.proxyServer});
+  const SslWidget({super.key, required this.proxyServer, this.settingsTile = false});
 
   @override
   State<SslWidget> createState() => _SslState();
@@ -29,8 +31,22 @@ class _SslState extends State<SslWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final appConfiguration = AppDisplaySettings.of(context);
+    final theme = Theme.of(context);
     return MenuAnchor(
         builder: (context, controller, child) {
+          void toggle() => controller.isOpen ? controller.close() : controller.open();
+
+          if (widget.settingsTile) {
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              leading: SvgIcon('lock', color: theme.colorScheme.onSurfaceVariant),
+              title: Text(localizations.httpsProxy, style: theme.textTheme.titleSmall),
+              trailing: Icon(Icons.expand_more, size: 18, color: theme.colorScheme.onSurfaceVariant),
+              onTap: toggle,
+            );
+          }
           // 设计稿：锁图标 + HTTPS 文字
           return Tooltip(
               message: localizations.httpsProxy,
@@ -46,16 +62,19 @@ class _SslState extends State<SslWidget> {
                           ? Theme.of(context).colorScheme.onSurfaceVariant
                           : Colors.red),
                   label: const Text('HTTPS', style: TextStyle(fontSize: 12)),
-                  onPressed: () {
-                    if (controller.isOpen) {
-                      controller.close();
-                    } else {
-                      controller.open();
-                    }
-                  }));
+                  onPressed: toggle));
         },
         menuChildren: [
-          _Switch(proxyServer: widget.proxyServer, onEnableChange: (val) => setState(() {})),
+          _Switch(
+            proxyServer: widget.proxyServer,
+            onEnableChange: (value) {
+              if (appConfiguration == null) {
+                setState(() {});
+              } else {
+                appConfiguration.globalChange.value = !appConfiguration.globalChange.value;
+              }
+            },
+          ),
           item(localizations.installCaLocal,
               onPressed: () => showDialog(context: context, builder: (context) => PCCert())),
           item("${localizations.installRootCa} iOS", onPressed: () async => iosCer(await localIp())),
@@ -378,9 +397,12 @@ class _SwitchState extends State<_Switch> {
     return MenuItemButton(
         onPressed: () {},
         child: Row(children: [
-          Padding(
+          Flexible(
+            child: Padding(
               padding: const EdgeInsets.only(left: 10, right: 5),
-              child: Text(localizations.enabledHttps, style: const TextStyle(fontSize: 14))),
+              child: Text(localizations.enabledHttps, style: const TextStyle(fontSize: 14)),
+            ),
+          ),
           Transform.scale(
               scale: 0.8,
               child: Switch(

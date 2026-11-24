@@ -6,3 +6,4 @@ Icon=/opt/proxypin/data/flutter_assets/assets/icon.png
 Terminal=false
 Type=Application
 Categories=Development;
+StartupWMClass=com.network.proxy

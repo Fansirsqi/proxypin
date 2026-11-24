@@ -208,7 +208,7 @@ async function onResponse(context, request, response) {
     String scriptPath = "${separator}scripts$separator${RandomUtil.randomString(16)}.js";
     var file = File(path + scriptPath);
     await file.create(recursive: true);
-    file.writeAsString(script);
+    await file.writeAsString(script);
     item.scriptPath = scriptPath;
     list.add(item);
     _scriptMap[item] = script;
@@ -222,12 +222,16 @@ async function onResponse(context, request, response) {
       return;
     }
 
-    if (_scriptMap[item] == script) {
+    if (item.scriptPath != null && _scriptMap[item] == script) {
       return;
     }
 
     final home = await Paths.homePath();
-    File(home + item.scriptPath!).writeAsString(script);
+    final path = item.scriptPath ?? "${separator}scripts$separator${RandomUtil.randomString(16)}.js";
+    final file = File(home + path);
+    await file.create(recursive: true);
+    await file.writeAsString(script);
+    item.scriptPath = path;
     _scriptMap[item] = script;
   }
 
@@ -337,8 +341,7 @@ async function onResponse(context, request, response) {
       if (item.enabled && item.match(url)) {
         // 响应阶段:优先复用请求阶段设置好的 scriptContext(含中途修改过的 env),
         // 否则新构建一个。用于 diff 的 envBefore 从最终传给 JS 的 context 中取。
-        final ctxMap =
-            (request.attributes['scriptContext'] as Map?)?.cast<String, dynamic>() ?? scriptContext(item);
+        final ctxMap = (request.attributes['scriptContext'] as Map?)?.cast<String, dynamic>() ?? scriptContext(item);
         final envBefore = Map<String, String>.from(((ctxMap['env'] as Map?) ?? const {}).map(
           (k, v) => MapEntry(k.toString(), v?.toString() ?? ''),
         ));

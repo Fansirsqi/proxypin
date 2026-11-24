@@ -10,6 +10,7 @@ import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/platform.dart';
 
 import '../component/text_field.dart';
+import 'viewer_app_bar.dart';
 
 /// Timestamp page
 /// @author Hongen Wang
@@ -85,7 +86,7 @@ class _TimestampPageState extends State<TimestampPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(localizations.timestamp, style: TextStyle(fontSize: 16)), centerTitle: true),
+      appBar: viewerAppBar(context, localizations.timestamp, windowId: widget.windowId),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
         children: [

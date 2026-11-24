@@ -24,6 +24,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navRequests => '请求';
 
   @override
+  String get expandNavigation => '展开侧栏';
+
+  @override
+  String get collapseNavigation => '收起侧栏';
+
+  @override
+  String get proxyBypassSeparatorHint => '多个条目用分号分隔';
+
+  @override
   String get favorites => '收藏';
 
   @override
@@ -129,6 +138,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeColor => '主题颜色';
 
   @override
+  String get themePrimary => '主色';
+
+  @override
+  String get themeSecondary => '辅助色';
+
+  @override
+  String get themeTertiary => '第三色';
+
+  @override
+  String get themeSurface => '界面底色';
+
+  @override
+  String get paletteClassic => '经典';
+
+  @override
+  String get paletteSoft => '柔和';
+
+  @override
+  String get paletteVivid => '鲜明';
+
+  @override
+  String get paletteNeutral => '中性';
+
+  @override
   String get themeLight => '浅色';
 
   @override
@@ -153,13 +186,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get minimizeToTraySubtitle => '点击窗口关闭按钮时不退出程序，而是隐藏到系统托盘图标。';
 
   @override
-  String get trayClosePromptContent => '关闭窗口后程序不会退出，而是继续在系统托盘中运行。要继续最小化到托盘吗？';
+  String get trayClosePromptContent => '最小化后，ProxyPin 会继续运行，可从系统状态区恢复窗口。退出会停止运行。';
 
   @override
-  String get trayCloseExitAnyway => '直接退出';
+  String get trayCloseExitAnyway => '退出';
 
   @override
-  String get trayCloseMinimizeToTray => '最小化到托盘';
+  String get trayCloseMinimizeToTray => '最小化到状态区';
+
+  @override
+  String get trayCloseTitle => '关闭 ProxyPin';
+
+  @override
+  String get trayCloseAsk => '每次询问';
+
+  @override
+  String get trayCloseRemember => '记住本次选择';
+
+  @override
+  String get windowCloseMinimize => '最小化窗口';
+
+  @override
+  String get windowClosePrompt => '可以将 ProxyPin 最小化到任务栏并继续运行，也可以退出程序。';
+
+  @override
+  String get jsonTreeView => '树形';
 
   @override
   String get copied => '已复制到剪切板';
@@ -1466,13 +1517,64 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pinnedDragSort => '已固定（拖拽排序）';
 
   @override
-  String get pinToolsHint => '全部功能（点 + 固定到工具栏）';
+  String get pinToolsHint => '全部功能（选中即可固定）';
 
   @override
   String get image => '图片';
 
   @override
   String get filtered => '过滤';
+
+  @override
+  String get detailLayoutSettings => '详情布局';
+
+  @override
+  String get detailTabAlignment => '标签栏横向对齐';
+
+  @override
+  String get detailTabLabelAlignment => '标签文字纵向对齐';
+
+  @override
+  String get detailAlignLeft => '靠左';
+
+  @override
+  String get detailAlignCenter => '居中';
+
+  @override
+  String get detailAlignRight => '靠右';
+
+  @override
+  String get detailAlignTop => '靠上';
+
+  @override
+  String get detailAlignBottom => '靠下';
+
+  @override
+  String get detailHeaderDensity => '表格行密度';
+
+  @override
+  String get detailDensityComfortable => '宽松';
+
+  @override
+  String get detailDensityCompact => '紧凑';
+
+  @override
+  String get detailDensityDense => '极紧凑';
+
+  @override
+  String get detailCopyHeaderName => '复制键名';
+
+  @override
+  String get detailCopyHeaderValue => '复制值';
+
+  @override
+  String get detailShowHeaderTable => '显示头部表格';
+
+  @override
+  String get detailShowRawHeaders => '显示头部原文';
+
+  @override
+  String get detailMediaUnavailable => '无法预览此媒体';
 
   @override
   String get captureListDensity => '抓包列表密度';
@@ -1556,6 +1658,15 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get navRequests => '請求';
+
+  @override
+  String get expandNavigation => '展開側欄';
+
+  @override
+  String get collapseNavigation => '收合側欄';
+
+  @override
+  String get proxyBypassSeparatorHint => '多個項目以分號分隔';
 
   @override
   String get favorites => '收藏';
@@ -1660,6 +1771,30 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get themeColor => '主題顏色';
 
   @override
+  String get themePrimary => '主色';
+
+  @override
+  String get themeSecondary => '輔助色';
+
+  @override
+  String get themeTertiary => '第三色';
+
+  @override
+  String get themeSurface => '介面底色';
+
+  @override
+  String get paletteClassic => '經典';
+
+  @override
+  String get paletteSoft => '柔和';
+
+  @override
+  String get paletteVivid => '鮮明';
+
+  @override
+  String get paletteNeutral => '中性';
+
+  @override
   String get themeLight => '淺色';
 
   @override
@@ -1684,13 +1819,31 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get minimizeToTraySubtitle => '關閉視窗時隱藏到系統托盤。';
 
   @override
-  String get trayClosePromptContent => '關閉視窗後程式不會退出，而是繼續在系統托盤中執行。要繼續最小化到托盤嗎？';
+  String get trayClosePromptContent => '最小化後，ProxyPin 會繼續執行，可從系統狀態區恢復視窗。結束應用程式會停止執行。';
 
   @override
-  String get trayCloseExitAnyway => '直接退出';
+  String get trayCloseExitAnyway => '結束';
 
   @override
-  String get trayCloseMinimizeToTray => '最小化到托盤';
+  String get trayCloseMinimizeToTray => '最小化到狀態區';
+
+  @override
+  String get trayCloseTitle => '關閉 ProxyPin';
+
+  @override
+  String get trayCloseAsk => '每次詢問';
+
+  @override
+  String get trayCloseRemember => '記住這次選擇';
+
+  @override
+  String get windowCloseMinimize => '最小化視窗';
+
+  @override
+  String get windowClosePrompt => '可以將 ProxyPin 最小化到工作列並繼續執行，也可以結束程式。';
+
+  @override
+  String get jsonTreeView => '樹狀';
 
   @override
   String get copied => '已複製到剪切板';
@@ -2812,11 +2965,122 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get pinnedDragSort => '已固定（拖曳排序）';
 
   @override
-  String get pinToolsHint => '全部功能（點 + 固定到工具欄）';
+  String get pinToolsHint => '全部功能（選取即可固定）';
 
   @override
   String get image => '圖片';
 
   @override
   String get filtered => '過濾';
+
+  @override
+  String get detailLayoutSettings => '詳情佈局';
+
+  @override
+  String get detailTabAlignment => '分頁列橫向對齊';
+
+  @override
+  String get detailTabLabelAlignment => '分頁文字縱向對齊';
+
+  @override
+  String get detailAlignLeft => '靠左';
+
+  @override
+  String get detailAlignCenter => '置中';
+
+  @override
+  String get detailAlignRight => '靠右';
+
+  @override
+  String get detailAlignTop => '靠上';
+
+  @override
+  String get detailAlignBottom => '靠下';
+
+  @override
+  String get detailHeaderDensity => '表格列密度';
+
+  @override
+  String get detailDensityComfortable => '寬鬆';
+
+  @override
+  String get detailDensityCompact => '緊湊';
+
+  @override
+  String get detailDensityDense => '極緊湊';
+
+  @override
+  String get detailCopyHeaderName => '複製鍵名';
+
+  @override
+  String get detailCopyHeaderValue => '複製值';
+
+  @override
+  String get detailShowHeaderTable => '顯示標頭表格';
+
+  @override
+  String get detailShowRawHeaders => '顯示標頭原文';
+
+  @override
+  String get detailMediaUnavailable => '無法預覽此媒體';
+
+  @override
+  String get captureListDensity => '抓包列表密度';
+
+  @override
+  String get captureListDensitySubtitle => '抓包列表每列的高度';
+
+  @override
+  String get densityComfortable => '寬鬆';
+
+  @override
+  String get densityCompact => '緊湊';
+
+  @override
+  String get densityDense => '極緊湊';
+
+  @override
+  String get codeFont => '程式碼字型';
+
+  @override
+  String get codeFontSubtitle => '請求主體、回應主體和腳本編輯器使用的字型';
+
+  @override
+  String get codeFontFollowUi => '跟隨介面字型';
+
+  @override
+  String get codeFontSystemMono => '系統等寬';
+
+  @override
+  String get codeFontCustom => '自訂字型…';
+
+  @override
+  String get codeFontFamily => '字型名稱';
+
+  @override
+  String get codeFontSize => '程式碼字級';
+
+  @override
+  String get codeFontSizeSubtitle => '程式碼編輯器字級';
+
+  @override
+  String get appFont => '介面字型';
+
+  @override
+  String get appFontSubtitle => '介面使用的字型';
+
+  @override
+  String get appFontSystem => '系統預設';
+
+  @override
+  String get appFontScale => '介面字級';
+
+  @override
+  String get appFontScaleSubtitle => '放大或縮小介面文字';
+
+  @override
+  String get uiDensity => '介面密度';
+
+  @override
+  String get uiDensitySubtitle => '按鈕、列表與選單的間距';
 }

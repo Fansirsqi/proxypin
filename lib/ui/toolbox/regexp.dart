@@ -23,6 +23,8 @@ import 'package:proxypin/ui/component/text_field.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/utils/platform.dart';
 
+import 'viewer_app_bar.dart';
+
 ///正则表达式工具
 ///@author Hongen Wang
 class RegExpPage extends StatefulWidget {
@@ -83,11 +85,7 @@ class _RegExpPageState extends State<RegExpPage> {
     Color primaryColor = Theme.of(context).colorScheme.primary;
 
     return Scaffold(
-        appBar: PreferredSize(
-            preferredSize: Size.fromHeight(50),
-            child: AppBar(
-                title: Text(localizations.regExp, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-                centerTitle: true)),
+        appBar: viewerAppBar(context, localizations.regExp, windowId: widget.windowId),
         resizeToAvoidBottomInset: false,
         body: ListView(padding: const EdgeInsets.all(10), children: [
           TextField(

@@ -18,6 +18,12 @@ bool _refresh = false;
 
 /// 刷新配置
 Future<void> _refreshConfig({bool force = false}) async {
+  if (DesktopMultiWindow.isStandalone) {
+    return DesktopMultiWindow.saveStandaloneChanges(() async {
+      await (await RequestCryptoManager.instance).flushConfig();
+      await DesktopMultiWindow.invokeMainWindowMethod("refreshRequestCrypto");
+    });
+  }
   if (force) {
     _refresh = false;
     await RequestCryptoManager.instance.then((manager) => manager.flushConfig());
@@ -90,10 +96,13 @@ class _RequestCryptoPageState extends State<RequestCryptoPage> {
     bool isCN = Localizations.localeOf(context).languageCode == 'zh';
     return Scaffold(
         backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-        appBar: AppBar(
-            title: Text(localizations.requestCrypto, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            toolbarHeight: 36,
-            centerTitle: true),
+        appBar: DesktopMultiWindow.isStandalone
+            ? null
+            : AppBar(
+                title: Text(localizations.requestCrypto,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                toolbarHeight: 36,
+                centerTitle: true),
         body: Center(
             child: Container(
                 padding: const EdgeInsets.only(left: 15, right: 10),

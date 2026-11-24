@@ -27,6 +27,8 @@ import 'package:proxypin/ui/component/buttons.dart';
 import 'package:proxypin/ui/component/text_field.dart';
 import 'package:proxypin/utils/platform.dart';
 
+import 'viewer_app_bar.dart';
+
 ///证书哈希名称查看
 ///@author Hongen Wang
 class CertHashPage extends StatefulWidget {
@@ -77,14 +79,14 @@ class _CertHashPageState extends State<CertHashPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text(localizations.systemCertName, style: TextStyle(fontSize: 16)), centerTitle: true),
+        appBar: viewerAppBar(context, localizations.certHashName, windowId: widget.windowId),
         resizeToAvoidBottomInset: false,
         body: ListView(children: [
           Wrap(alignment: WrapAlignment.end, children: [
             ElevatedButton.icon(
                 onPressed: () async {
-                  final picked = await FilePicker.pickFile(
-                      type: FileType.custom, allowedExtensions: ['crt', 'pem', 'cer', 'der']);
+                  final picked =
+                      await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['crt', 'pem', 'cer', 'der']);
                   if (picked == null) return;
 
                   File file = File(picked.path!);

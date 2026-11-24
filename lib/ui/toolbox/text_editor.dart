@@ -26,8 +26,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/network/util/logger.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/component/search/finder.dart';
@@ -51,6 +50,8 @@ import 'package:re_highlight/languages/yaml.dart';
 import 'package:re_highlight/re_highlight.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:xml/xml.dart';
+
+import 'viewer_app_bar.dart';
 
 /// 文本编辑工具：CodeForge 编辑器 + 多语言高亮切换。
 ///
@@ -267,18 +268,8 @@ class _TextEditorPageState extends State<TextEditorPage> {
 
   @override
   Widget build(BuildContext context) {
-    bool isNewWindows = widget.windowId != null && Platform.isWindows;
-
     return Scaffold(
-      appBar: isNewWindows
-          ? null
-          : PreferredSize(
-              preferredSize: Platforms.isDesktop() ? const Size.fromHeight(23) : const Size.fromHeight(36),
-              child: AppBar(
-                  title:
-                      Text(localizations.textEditor, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w300)),
-                  centerTitle: true),
-            ),
+      appBar: viewerAppBar(context, localizations.textEditor, windowId: widget.windowId),
       body: Column(children: [
         _toolbar(),
         const Divider(height: 1, thickness: 0.3),
@@ -340,15 +331,7 @@ class _TextEditorPageState extends State<TextEditorPage> {
   }
 
   Widget _textView() {
-    final isDark = Theme.brightnessOf(context) == Brightness.dark;
-    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
-    final pageBg = Theme.of(context).colorScheme.surface;
-    final editorTheme = isDark
-        ? {
-            ...baseTheme,
-            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
-          }
-        : baseTheme;
+    final editorTheme = codeEditorTheme(context);
 
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -357,14 +340,14 @@ class _TextEditorPageState extends State<TextEditorPage> {
         child: CodeForge(
           // CodeForge 的 language / lineWrap 是 late final，切换得新 key 重建；
           // controller / findController 在 State 持有，重建不丢文本、搜索状态、撤销栈。
-          key: ValueKey('text-editor-${_lang.label}-$_wrap'),
+          key: ValueKey((_lang.label, _wrap, editorTheme['root'])),
           controller: _controller,
           findController: _findController,
           lineWrap: _wrap,
           language: _lang.mode,
           enableGuideLines: false,
           editorTheme: editorTheme,
-          textStyle: codeTextStyle(size: 13),
+          textStyle: codeTextStyle(context, size: 13),
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
           selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
         ),

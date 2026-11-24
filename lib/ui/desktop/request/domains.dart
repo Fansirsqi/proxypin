@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/context_menu.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -568,8 +569,10 @@ class _DomainRequestsState extends State<DomainRequests> {
               Expanded(
                   child: Text(title,
                       textAlign: TextAlign.left,
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w500, color: theme.colorScheme.onSurface),
+                      style: codeTextStyle(context,
+                          base: const TextStyle(fontWeight: FontWeight.normal, height: 1.2),
+                          size: 13,
+                          color: theme.colorScheme.onSurface),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis)),
               if (trailing != null) ...[const SizedBox(width: 8), trailing!],

@@ -13,19 +13,17 @@ import 'package:proxypin/network/components/manager/request_rewrite_manager.dart
 import 'package:proxypin/network/components/manager/script_manager.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
-import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/desktop/setting/external_proxy.dart';
 import 'package:proxypin/ui/desktop/setting/filter.dart';
 import 'package:proxypin/ui/desktop/setting/hosts.dart';
-import 'package:proxypin/ui/desktop/setting/request_block.dart';
 import 'package:proxypin/ui/desktop/setting/weak_network.dart';
 import 'package:proxypin/ui/desktop/toolbar/mcp_panel.dart';
 
 typedef QuickToolName = String Function(AppLocalizations localizations);
 typedef QuickToolLaunch = Future<void> Function(BuildContext context, ProxyServer proxyServer);
 
-/// 功能是否处于启用/生效状态（用于工具栏图标高亮：未启用灰色，启用主色）
+/// 功能是否处于启用/生效状态（用于工具栏图标高亮）
 typedef QuickToolActive = Future<bool> Function(ProxyServer proxyServer);
 
 class QuickTool {
@@ -52,12 +50,8 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.list.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        var manager = await RequestBlockManager.instance;
-        if (!context.mounted) return;
-        await showDialog(
-            barrierDismissible: false,
-            context: context,
-            builder: (context) => RequestBlock(requestBlockManager: manager));
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.requestBlock, 'RequestBlock',
+            size: const Size(650, 570));
       }),
   QuickTool(
       id: 'requestRewrite',
@@ -68,7 +62,7 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.rules.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        await MultiWindow.openWindow(AppLocalizations.of(context)!.requestRewrite, 'RequestRewriteWidget',
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.requestRewrite, 'RequestRewriteWidget',
             size: const Size(800, 750));
       }),
   QuickTool(
@@ -80,7 +74,7 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.rules.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        await MultiWindow.openWindow(AppLocalizations.of(context)!.requestMap, 'RequestMapPage',
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.requestMap, 'RequestMapPage',
             size: const Size(800, 720));
       }),
   QuickTool(
@@ -92,7 +86,7 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.rules.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        await MultiWindow.openWindow(AppLocalizations.of(context)!.requestCrypto, 'RequestCryptoPage',
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.requestCrypto, 'RequestCryptoPage',
             size: const Size(820, 750));
       }),
   QuickTool(
@@ -104,7 +98,7 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.list.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        await MultiWindow.openWindow(AppLocalizations.of(context)!.script, 'ScriptWidget',
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.script, 'ScriptWidget',
             size: const Size(800, 780));
       }),
   QuickTool(
@@ -116,7 +110,7 @@ final trafficQuickTools = <QuickTool>[
         return m.enabled && m.list.isNotEmpty;
       },
       launch: (context, proxyServer) async {
-        await MultiWindow.openWindow(AppLocalizations.of(context)!.breakpoint, 'RequestBreakpointPage',
+        await MultiWindow.openToolWindow(AppLocalizations.of(context)!.breakpoint, 'RequestBreakpointPage',
             size: const Size(800, 750));
       }),
 ];
@@ -275,9 +269,8 @@ class _QuickToolbarState extends State<QuickToolbar> {
                   // 未启用灰色，启用才主色高亮
                   icon: SvgIcon(tool.icon,
                       size: 17,
-                      color: _active[tool.id] == true
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant),
+                      color:
+                          _active[tool.id] == true ? theme.colorScheme.tertiary : theme.colorScheme.onSurfaceVariant),
                   onPressed: () async {
                     await tool.launch(context, widget.proxyServer);
                     // 弹窗类工具关闭后刷新状态；独立窗口类在下次固定项变化/启动时刷新
@@ -304,17 +297,8 @@ class _QuickToolbarState extends State<QuickToolbar> {
                   padding: const EdgeInsets.only(left: 14),
                   child: Text(localizations.trafficControl,
                       style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: theme.colorScheme.onSurfaceVariant))),
+                          fontSize: 11, fontWeight: FontWeight.w500, color: theme.colorScheme.onSurfaceVariant))),
               for (var tool in trafficQuickTools) _menuRow(context, tool, appConfiguration),
-              const PopupMenuDivider(),
-              PopupMenuItem<String>(
-                  height: 40,
-                  child: Text(localizations.customizeToolbar, style: TextStyle(color: theme.colorScheme.primary)),
-                  onTap: () => showDialog(
-                      context: context,
-                      builder: (_) => CustomizeToolbarDialog(appConfiguration: appConfiguration))),
             ]);
   }
 
@@ -351,83 +335,66 @@ class _QuickToolbarState extends State<QuickToolbar> {
   }
 }
 
-class CustomizeToolbarDialog extends StatelessWidget {
+class ToolbarSettings extends StatelessWidget {
   final AppConfiguration appConfiguration;
 
-  const CustomizeToolbarDialog({super.key, required this.appConfiguration});
+  const ToolbarSettings({super.key, required this.appConfiguration});
 
   @override
   Widget build(BuildContext context) {
     var localizations = AppLocalizations.of(context)!;
-    return Dialog(
-        child: ValueListenableBuilder<List<String>>(
-            valueListenable: appConfiguration.toolbarPins,
-            builder: (context, pins, _) {
-              var theme = Theme.of(context);
-              var pinnedTools = pins.map(quickToolOf).whereType<QuickTool>().toList();
-              return ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Padding(
-                        padding: const EdgeInsets.fromLTRB(18, 12, 8, 8),
-                        child: Row(children: [
-                          Text(localizations.customizeToolbar,
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                          const Spacer(),
-                          TextButton(
-                              onPressed: () {
-                                appConfiguration.toolbarPins.value = List<String>.of(AppConfiguration.defaultToolbarPins);
-                                appConfiguration.flushConfig();
-                              },
-                              child: Text(localizations.restoreDefaults)),
-                          const CloseButton(),
-                        ])),
-                    Flexible(
-                        child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(localizations.pinnedDragSort,
-                                  style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
-                              const SizedBox(height: 8),
-                              if (pinnedTools.isEmpty)
-                                const SizedBox(height: 4)
-                              else
-                                // 设计稿 .cz-chips：横排流式 chip；ReorderableListView 只支持竖排，
-                                // 固定项数量少（≤11），用 Draggable + DragTarget 手写换位即可
-                                Wrap(spacing: 8, runSpacing: 8, children: [
-                                  for (var tool in pinnedTools) _pinnedChip(context, tool)
-                                ]),
-                              const SizedBox(height: 14),
-                              Text(localizations.pinToolsHint,
-                                  style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: [for (var tool in quickTools) _toolGridItem(context, tool, pins.contains(tool.id))]),
-                            ])))
-                  ]));
-            }));
+    return ValueListenableBuilder<List<String>>(
+      valueListenable: appConfiguration.toolbarPins,
+      builder: (context, pins, _) {
+        final theme = Theme.of(context);
+        final hint = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+        final pinnedTools = pins.map(quickToolOf).whereType<QuickTool>();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () {
+                  appConfiguration.toolbarPins.value = List<String>.of(AppConfiguration.defaultToolbarPins);
+                  appConfiguration.flushConfig();
+                },
+                child: Text(localizations.restoreDefaults),
+              ),
+            ),
+            Text(localizations.pinnedDragSort, style: hint),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final tool in pinnedTools) _pinnedChip(context, tool),
+            ]),
+            const SizedBox(height: 20),
+            Text(localizations.pinToolsHint, style: hint),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final tool in quickTools) _toolChip(context, tool, pins.contains(tool.id)),
+            ]),
+          ],
+        );
+      },
+    );
   }
 
   /// 已固定 chip：整体按住即拖（桌面端鼠标直接拖，无需长按），拖到另一个 chip 上落到其位置
   Widget _pinnedChip(BuildContext context, QuickTool tool) {
-    return DragTarget<String>(
-        onAcceptWithDetails: (details) {
-          if (details.data != tool.id) {
-            _reorderPin(details.data, tool.id);
-          }
-        },
-        builder: (context, candidateData, rejectedData) {
-          // 拖拽物悬停（非自身）时加粗高亮描边，提示落点
-          var dropHighlight = candidateData.isNotEmpty && candidateData.first != tool.id;
-          return Draggable<String>(
-              data: tool.id,
-              feedback: Material(color: Colors.transparent, child: _chip(context, tool, dragging: true)),
-              childWhenDragging: Opacity(opacity: 0.35, child: _chip(context, tool)),
-              child: MouseRegion(
-                  cursor: SystemMouseCursors.grab, child: _chip(context, tool, dropHighlight: dropHighlight)));
-        });
+    return DragTarget<String>(onAcceptWithDetails: (details) {
+      if (details.data != tool.id) {
+        _reorderPin(details.data, tool.id);
+      }
+    }, builder: (context, candidateData, rejectedData) {
+      // 拖拽物悬停（非自身）时加粗高亮描边，提示落点
+      var dropHighlight = candidateData.isNotEmpty && candidateData.first != tool.id;
+      return Draggable<String>(
+          data: tool.id,
+          feedback: Material(color: Colors.transparent, child: _chip(context, tool, dragging: true)),
+          childWhenDragging: Opacity(opacity: 0.35, child: _chip(context, tool)),
+          child:
+              MouseRegion(cursor: SystemMouseCursors.grab, child: _chip(context, tool, dropHighlight: dropHighlight)));
+    });
   }
 
   /// 把 draggedId 移动到 targetId 的位置（其余顺延）
@@ -442,63 +409,23 @@ class CustomizeToolbarDialog extends StatelessWidget {
     appConfiguration.flushConfig();
   }
 
-  /// 设计稿 .cz-chip：高 32、圆角 8、主色软底 + 主色描边，内容 ≡ 名称 ×
   Widget _chip(BuildContext context, QuickTool tool, {bool dropHighlight = false, bool dragging = false}) {
-    var theme = Theme.of(context);
-    return Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-            color: theme.colorScheme.primary.withValues(alpha: dragging ? 0.14 : 0.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: theme.colorScheme.primary.withValues(alpha: dropHighlight ? 0.9 : 0.35),
-                width: dropHighlight ? 1.5 : 1)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.drag_indicator, size: 15, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(tool.name(AppLocalizations.of(context)!), style: const TextStyle(fontSize: 12.5)),
-          InkWell(
-              onTap: () => toggleToolbarPin(appConfiguration, tool.id),
-              child: Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: Icon(Icons.close, size: 15, color: theme.colorScheme.onSurfaceVariant))),
-        ]));
+    final colors = Theme.of(context).colorScheme;
+    return InputChip(
+      backgroundColor: dragging ? colors.primaryContainer : null,
+      side: dropHighlight ? BorderSide(color: colors.primary) : null,
+      avatar: const Icon(Icons.drag_indicator, size: 16),
+      label: Text(tool.name(AppLocalizations.of(context)!)),
+      onDeleted: () => toggleToolbarPin(appConfiguration, tool.id),
+    );
   }
 
-  Widget _toolGridItem(BuildContext context, QuickTool tool, bool pinned) {
-    var theme = Theme.of(context);
-    var localizations = AppLocalizations.of(context)!;
-    return InkWell(
-        onTap: () => toggleToolbarPin(appConfiguration, tool.id),
-        borderRadius: BorderRadius.circular(9),
-        child: Container(
-            width: 86,
-            padding: const EdgeInsets.symmetric(vertical: 9),
-            decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(9),
-                color: pinned ? theme.colorScheme.primary.withValues(alpha: 0.06) : null,
-                border: Border.all(color: theme.dividerColor.withValues(alpha: pinned ? 0 : 0.5))),
-            // 设计稿 .cz-item：图标+文字整体在格子里水平居中（Stack 默认 topStart 会导致短名字左偏）
-            child: Stack(alignment: Alignment.topCenter, children: [
-              Column(children: [
-                SvgIcon(tool.icon, size: 19, color: theme.colorScheme.onSurfaceVariant),
-                const SizedBox(height: 5),
-                Text(tool.name(localizations),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurface)),
-              ]),
-              Positioned(
-                  top: 2,
-                  right: 2,
-                  child: Container(
-                      width: 15,
-                      height: 15,
-                      decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: pinned ? okColor(theme) : theme.colorScheme.primary),
-                      child: Icon(pinned ? Icons.check : Icons.add, size: 11, color: Colors.white))),
-            ])));
+  Widget _toolChip(BuildContext context, QuickTool tool, bool pinned) {
+    return FilterChip(
+      avatar: SvgIcon(tool.icon, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
+      label: Text(tool.name(AppLocalizations.of(context)!)),
+      selected: pinned,
+      onSelected: (_) => toggleToolbarPin(appConfiguration, tool.id),
+    );
   }
 }

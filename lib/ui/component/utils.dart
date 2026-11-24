@@ -18,6 +18,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
@@ -68,18 +69,21 @@ abstract final class DarkPalette {
 /// 深浅色的 dividerColor 都已在 main.dart 注入设计稿 --border 值，直接取用
 Color chromeBorderColor(ThemeData theme) => theme.dividerColor;
 
+Color desktopChromeColor(ThemeData theme) {
+  final preset = theme.extension<ActiveThemePreset>()?.preset ?? ThemePreset.custom;
+  return preset == ThemePreset.custom ? theme.colorScheme.surface : theme.colorScheme.surfaceContainerLow;
+}
+
 /// 主色软底（设计稿 --primary-soft）：浅色主题主色低透明度，暗黑 16%
 Color primarySoftBg(ThemeData theme, {double lightAlpha = 0.08}) =>
     theme.colorScheme.primary.withValues(alpha: theme.brightness == Brightness.light ? lightAlpha : 0.16);
 
 /// 启用/成功绿（设计稿 --ok）：浅色 #1F8B4C，暗黑 #3FB96A
-Color okColor(ThemeData theme) =>
-    theme.brightness == Brightness.light ? const Color(0xFF1F8B4C) : DarkPalette.ok;
+Color okColor(ThemeData theme) => theme.brightness == Brightness.light ? const Color(0xFF1F8B4C) : DarkPalette.ok;
 
 /// 弱网徽章（设计稿 .badge）：浅色黄底深字，暗黑 16% 黄底 + --warn 字
-Color warnBadgeBg(ThemeData theme) => theme.brightness == Brightness.light
-    ? const Color(0xFFFFF3E8)
-    : DarkPalette.warn.withValues(alpha: 0.16);
+Color warnBadgeBg(ThemeData theme) =>
+    theme.brightness == Brightness.light ? const Color(0xFFFFF3E8) : DarkPalette.warn.withValues(alpha: 0.16);
 
 Color warnBadgeText(ThemeData theme) =>
     theme.brightness == Brightness.light ? const Color(0xFFB76E00) : DarkPalette.warn;
@@ -136,7 +140,8 @@ Widget getIcon(HttpResponse? response, {Color? color, double width = 18, double 
     );
   }
 
-  return SizedBox(width: width, child: Icon(contentMap[contentType] ?? Icons.http, size: size, color: color ?? Colors.green));
+  return SizedBox(
+      width: width, child: Icon(contentMap[contentType] ?? Icons.http, size: size, color: color ?? Colors.green));
 }
 
 //展示报文大小
@@ -211,7 +216,7 @@ RelativeRect menuPosition(BuildContext context) {
 }
 
 Widget contextMenu(BuildContext context, EditableTextState editableTextState,
-    {ContextMenuButtonItem? customItem, bool copyValue = true}) {
+    {ContextMenuButtonItem? customItem, bool copyValue = true, String? copyValueLabel}) {
   List<ContextMenuButtonItem> list = [
     ContextMenuButtonItem(
       onPressed: () {
@@ -227,7 +232,8 @@ Widget contextMenu(BuildContext context, EditableTextState editableTextState,
     // “复制值”在 header 等场景有用；body 整个文本即全部内容，用全选即可，故可关闭
     if (copyValue)
       ContextMenuButtonItem(
-        label: Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh') ? '复制值' : 'Copy Value',
+        label: copyValueLabel ??
+            (Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh') ? '复制值' : 'Copy Value'),
         onPressed: () {
           unSelect(editableTextState);
           Clipboard.setData(ClipboardData(text: editableTextState.textEditingValue.text)).then((value) {

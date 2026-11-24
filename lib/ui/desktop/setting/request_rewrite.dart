@@ -98,11 +98,13 @@ class RequestRewriteState extends State<RequestRewriteWidget> {
   Widget build(BuildContext context) {
     return Scaffold(
         backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
-        appBar: AppBar(
-            title:
-                Text(localizations.requestRewrite, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-            toolbarHeight: 34,
-            centerTitle: true),
+        appBar: DesktopMultiWindow.isStandalone
+            ? null
+            : AppBar(
+                title: Text(localizations.requestRewrite,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                toolbarHeight: 34,
+                centerTitle: true),
         body: Padding(
             padding: const EdgeInsets.only(left: 15, right: 10, bottom: 10),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -120,6 +122,7 @@ class RequestRewriteState extends State<RequestRewriteWidget> {
                                   value: enableNotifier.value,
                                   onChanged: (value) {
                                     enableNotifier.value = value;
+                                    widget.requestRewrites.enabled = value;
                                     MultiWindow.invokeRefreshRewrite(Operation.enabled, enabled: value);
                                   }));
                         })),
@@ -128,10 +131,7 @@ class RequestRewriteState extends State<RequestRewriteWidget> {
                     child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    IconButton(
-                        onPressed: refresh,
-                        icon: const Icon(Icons.refresh, color: Colors.blue),
-                        tooltip: localizations.refresh),
+                    IconButton(onPressed: refresh, icon: const Icon(Icons.refresh), tooltip: localizations.refresh),
                     const SizedBox(width: 10),
                     TextButton.icon(
                       icon: const Icon(Icons.add, size: 18),
@@ -155,8 +155,8 @@ class RequestRewriteState extends State<RequestRewriteWidget> {
 
   //刷新
   void refresh() async {
-    await widget.requestRewrites.reloadRequestRewrite();
-    setState(() {});
+    await DesktopMultiWindow.saveStandaloneChanges(widget.requestRewrites.reloadRequestRewrite);
+    if (mounted) setState(() {});
   }
 
   //导入js
@@ -174,7 +174,12 @@ class RequestRewriteState extends State<RequestRewriteWidget> {
         var rule = RequestRewriteRule.formJson(item);
         var items = (item['items'] as List).map((e) => RewriteItem.fromJson(e)).toList();
 
-        widget.requestRewrites.addRule(rule, items);
+        if (DesktopMultiWindow.isStandalone) {
+          widget.requestRewrites.rules.add(rule);
+          widget.requestRewrites.rewriteItemsCache[rule] = items;
+        } else {
+          await widget.requestRewrites.addRule(rule, items);
+        }
         await MultiWindow.invokeRefreshRewrite(Operation.add, rule: rule, items: items);
       }
 
@@ -469,10 +474,7 @@ class _RequestRuleListState extends State<RequestRuleList> {
           }),
       const PopupMenuDivider(),
       PopupMenuItem(
-          height: 35,
-          enabled: index > 0,
-          child: Text(localizations.moveUp),
-          onTap: () => _moveRule(index, -1)),
+          height: 35, enabled: index > 0, child: Text(localizations.moveUp), onTap: () => _moveRule(index, -1)),
       PopupMenuItem(
           height: 35,
           enabled: index < widget.requestRewrites.rules.length - 1,
@@ -662,14 +664,14 @@ class _RewriteRuleEditState extends State<RewriteRuleEdit> {
 
                 if (index >= 0) {
                   //存在 更新重写
-                  MultiWindow.invokeRefreshRewrite(Operation.update, index: index, rule: rule, items: items);
+                  await MultiWindow.invokeRefreshRewrite(Operation.update, index: index, rule: rule, items: items);
                 } else {
                   //添加
                   if (widget.windowId != null) {
                     requestRewrites.rules.add(rule);
                   }
 
-                  MultiWindow.invokeRefreshRewrite(Operation.add, rule: rule, items: items);
+                  await MultiWindow.invokeRefreshRewrite(Operation.add, rule: rule, items: items);
                 }
                 if (mounted) {
                   Navigator.of(this.context).pop(rule);

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:menu_base/menu_base.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -10,7 +9,7 @@ class DesktopTrayManager with TrayListener {
 
   DesktopTrayManager._();
 
-  bool _initialized = false;
+  Future<void>? _initialization;
   Future<void> Function()? _quitHandler;
 
   void setQuitHandler(Future<void> Function()? handler) {
@@ -20,14 +19,24 @@ class DesktopTrayManager with TrayListener {
   String _text(String zh, String en) => Platform.localeName.startsWith('zh') ? zh : en;
 
   Future<void> ensureInitialized() async {
-    if (_initialized) {
-      return;
+    final initialization = _initialization ??= _initialize();
+    try {
+      await initialization;
+    } catch (_) {
+      if (identical(_initialization, initialization)) {
+        _initialization = null;
+        await exitApp();
+      }
+      rethrow;
     }
+  }
 
-    _initialized = true;
+  Future<void> _initialize() async {
     trayManager.addListener(this);
-    await trayManager.setIcon('assets/icon.ico');
-    await trayManager.setToolTip('ProxyPin');
+    await trayManager.setIcon(Platform.isLinux ? 'assets/icon.png' : 'assets/icon.ico');
+    if (!Platform.isLinux) {
+      await trayManager.setToolTip('ProxyPin');
+    }
     await trayManager.setContextMenu(
       Menu(
         items: [
@@ -52,17 +61,22 @@ class DesktopTrayManager with TrayListener {
 
   Future<void> restoreWindow() async {
     await windowManager.show();
+    if (await windowManager.isMinimized()) await windowManager.restore();
     await windowManager.focus();
   }
 
   Future<void> exitApp() async {
     try {
+      await _initialization;
+    } catch (_) {
+    } finally {
+      _initialization = null;
       trayManager.removeListener(this);
+    }
+    try {
       await trayManager.destroy();
     } catch (_) {
       // ignore tray cleanup errors during app shutdown
-    } finally {
-      _initialized = false;
     }
   }
 

@@ -136,6 +136,24 @@ abstract class AppLocalizations {
   /// **'Requests'**
   String get navRequests;
 
+  /// No description provided for @expandNavigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand sidebar'**
+  String get expandNavigation;
+
+  /// No description provided for @collapseNavigation.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse sidebar'**
+  String get collapseNavigation;
+
+  /// No description provided for @proxyBypassSeparatorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Separate entries with semicolons'**
+  String get proxyBypassSeparatorHint;
+
   /// No description provided for @favorites.
   ///
   /// In en, this message translates to:
@@ -346,6 +364,54 @@ abstract class AppLocalizations {
   /// **'Theme Color'**
   String get themeColor;
 
+  /// No description provided for @themePrimary.
+  ///
+  /// In en, this message translates to:
+  /// **'Primary'**
+  String get themePrimary;
+
+  /// No description provided for @themeSecondary.
+  ///
+  /// In en, this message translates to:
+  /// **'Secondary'**
+  String get themeSecondary;
+
+  /// No description provided for @themeTertiary.
+  ///
+  /// In en, this message translates to:
+  /// **'Tertiary'**
+  String get themeTertiary;
+
+  /// No description provided for @themeSurface.
+  ///
+  /// In en, this message translates to:
+  /// **'Surfaces'**
+  String get themeSurface;
+
+  /// No description provided for @paletteClassic.
+  ///
+  /// In en, this message translates to:
+  /// **'Classic'**
+  String get paletteClassic;
+
+  /// No description provided for @paletteSoft.
+  ///
+  /// In en, this message translates to:
+  /// **'Soft'**
+  String get paletteSoft;
+
+  /// No description provided for @paletteVivid.
+  ///
+  /// In en, this message translates to:
+  /// **'Vivid'**
+  String get paletteVivid;
+
+  /// No description provided for @paletteNeutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Neutral'**
+  String get paletteNeutral;
+
   /// No description provided for @themeLight.
   ///
   /// In en, this message translates to:
@@ -397,20 +463,56 @@ abstract class AppLocalizations {
   /// No description provided for @trayClosePromptContent.
   ///
   /// In en, this message translates to:
-  /// **'Closing the window will keep ProxyPin running in the system tray. Do you want to minimize it now?'**
+  /// **'Minimize to keep ProxyPin running in the system status area, or exit to stop it.'**
   String get trayClosePromptContent;
 
   /// No description provided for @trayCloseExitAnyway.
   ///
   /// In en, this message translates to:
-  /// **'Exit anyway'**
+  /// **'Exit'**
   String get trayCloseExitAnyway;
 
   /// No description provided for @trayCloseMinimizeToTray.
   ///
   /// In en, this message translates to:
-  /// **'Minimize to tray'**
+  /// **'Minimize to status area'**
   String get trayCloseMinimizeToTray;
+
+  /// No description provided for @trayCloseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Close ProxyPin'**
+  String get trayCloseTitle;
+
+  /// No description provided for @trayCloseAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask every time'**
+  String get trayCloseAsk;
+
+  /// No description provided for @trayCloseRemember.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember my choice'**
+  String get trayCloseRemember;
+
+  /// No description provided for @windowCloseMinimize.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize window'**
+  String get windowCloseMinimize;
+
+  /// No description provided for @windowClosePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimize ProxyPin to the taskbar and keep it running, or exit the application.'**
+  String get windowClosePrompt;
+
+  /// No description provided for @jsonTreeView.
+  ///
+  /// In en, this message translates to:
+  /// **'Tree'**
+  String get jsonTreeView;
 
   /// No description provided for @copied.
   ///
@@ -2953,7 +3055,7 @@ abstract class AppLocalizations {
   /// No description provided for @pinToolsHint.
   ///
   /// In en, this message translates to:
-  /// **'All tools (tap + to pin to toolbar)'**
+  /// **'All tools (select to pin)'**
   String get pinToolsHint;
 
   /// No description provided for @image.
@@ -2967,6 +3069,108 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Filtered'**
   String get filtered;
+
+  /// No description provided for @detailLayoutSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Detail layout'**
+  String get detailLayoutSettings;
+
+  /// No description provided for @detailTabAlignment.
+  ///
+  /// In en, this message translates to:
+  /// **'Tab bar alignment'**
+  String get detailTabAlignment;
+
+  /// No description provided for @detailTabLabelAlignment.
+  ///
+  /// In en, this message translates to:
+  /// **'Tab label alignment'**
+  String get detailTabLabelAlignment;
+
+  /// No description provided for @detailAlignLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get detailAlignLeft;
+
+  /// No description provided for @detailAlignCenter.
+  ///
+  /// In en, this message translates to:
+  /// **'Center'**
+  String get detailAlignCenter;
+
+  /// No description provided for @detailAlignRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get detailAlignRight;
+
+  /// No description provided for @detailAlignTop.
+  ///
+  /// In en, this message translates to:
+  /// **'Top'**
+  String get detailAlignTop;
+
+  /// No description provided for @detailAlignBottom.
+  ///
+  /// In en, this message translates to:
+  /// **'Bottom'**
+  String get detailAlignBottom;
+
+  /// No description provided for @detailHeaderDensity.
+  ///
+  /// In en, this message translates to:
+  /// **'Table row density'**
+  String get detailHeaderDensity;
+
+  /// No description provided for @detailDensityComfortable.
+  ///
+  /// In en, this message translates to:
+  /// **'Comfortable'**
+  String get detailDensityComfortable;
+
+  /// No description provided for @detailDensityCompact.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact'**
+  String get detailDensityCompact;
+
+  /// No description provided for @detailDensityDense.
+  ///
+  /// In en, this message translates to:
+  /// **'Dense'**
+  String get detailDensityDense;
+
+  /// No description provided for @detailCopyHeaderName.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy key'**
+  String get detailCopyHeaderName;
+
+  /// No description provided for @detailCopyHeaderValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy value'**
+  String get detailCopyHeaderValue;
+
+  /// No description provided for @detailShowHeaderTable.
+  ///
+  /// In en, this message translates to:
+  /// **'Show header table'**
+  String get detailShowHeaderTable;
+
+  /// No description provided for @detailShowRawHeaders.
+  ///
+  /// In en, this message translates to:
+  /// **'Show raw headers'**
+  String get detailShowRawHeaders;
+
+  /// No description provided for @detailMediaUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Media preview unavailable'**
+  String get detailMediaUnavailable;
 
   /// No description provided for @captureListDensity.
   ///

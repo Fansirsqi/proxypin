@@ -53,6 +53,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # System-level dependencies.
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
+pkg_check_modules(WAYLAND QUIET IMPORTED_TARGET wayland-client>=1.20)
 
 add_definitions(-DAPPLICATION_ID="${APPLICATION_ID}")
 
@@ -73,6 +74,12 @@ apply_standard_settings(${BINARY_NAME})
 # Add dependency libraries. Add any application-specific dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
+if(WAYLAND_FOUND)
+  target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::WAYLAND)
+  target_compile_definitions(${BINARY_NAME} PRIVATE HAVE_WAYLAND_CLIENT)
+endif()
+target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(${BINARY_NAME} PRIVATE ${CMAKE_DL_LIBS})
 
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
@@ -89,7 +96,11 @@ set_target_properties(${BINARY_NAME}
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
+set(MIMALLOC_USE_STATIC_LIBS OFF CACHE BOOL "Build media_kit with a static mimalloc override")
 include(flutter/generated_plugins.cmake)
+if(TARGET tray_manager_plugin)
+  target_compile_options(tray_manager_plugin PRIVATE -Wno-error=deprecated-declarations)
+endif()
 
 
 # === Installation ===
@@ -138,10 +149,6 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
     COMPONENT Runtime)
 endif()
 
-# flutter_js 依赖的 quickjs 桥接库是 pub 包里预编译的 .so，由插件自己的 install
-# 规则安装；不同构建组合下它会落到错误前缀（干净构建时 bundle 里就没有它，
-# 运行时报 “Failed to load dynamic library 'libquickjs_c_bridge_plugin.so'”，
-# JS 工具与脚本拦截器全部不可用）。这里在 prefix 已经确定之后再兜底装一次。
 set(QUICKJS_BRIDGE
   "${CMAKE_CURRENT_SOURCE_DIR}/flutter/ephemeral/.plugin_symlinks/flutter_js/linux/shared/libquickjs_c_bridge_plugin.so")
 if(EXISTS "${QUICKJS_BRIDGE}")

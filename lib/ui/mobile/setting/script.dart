@@ -762,7 +762,7 @@ class _ScriptEditState extends State<ScriptEdit> {
                                         editorTheme: monokaiSublimeTheme,
                                         readOnly: _useRemote,
                                         enableGuideLines: false,
-                                        textStyle: codeTextStyle(size: 13, color: Colors.white),
+                                        textStyle: codeTextStyle(context, size: 13, color: Colors.white),
                                       )),
                                   if (_useRemote && script.text.trim().isEmpty)
                                     Positioned.fill(

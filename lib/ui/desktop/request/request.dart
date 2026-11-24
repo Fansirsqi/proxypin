@@ -189,7 +189,7 @@ class _RequestWidgetState extends State<RequestWidget> {
     // Material+InkWell：hover/水波纹由组件自身处理，不触发整行 setState 重建
     //（之前 MouseRegion+setState 会让图片缩略图每次 hover 都重新解码，闪烁且费性能）。
     // 行密度来自偏好设置（抓包列表密度）：宽松 / 紧凑 / 极紧凑
-    final metrics = (AppConfiguration.current?.captureRowMetrics ?? const CaptureRowMetrics(
+    final metrics = (AppDisplaySettings.of(context)?.captureRowMetrics ?? const CaptureRowMetrics(
         leftWithDomain: 12,
         leftIndent: 26,
         leftSelection: 6,
@@ -573,9 +573,12 @@ class _RequestWidgetState extends State<RequestWidget> {
   Future<void> requestEdit() async {
     var size = MediaQuery.of(context).size;
 
-    await MultiWindow.openWindow(localizations.requestEdit, 'RequestEditor',
-        size: Size(960, size.height),
-        args: {'request': widget.request, 'proxyPort': widget.proxyServer.port});
+    await MultiWindow.openToolWindow(
+      localizations.requestEdit,
+      'RequestEditor',
+      args: {'request': widget.request},
+      size: Size(960, size.height),
+    );
   }
 
   // 新窗口打开详情

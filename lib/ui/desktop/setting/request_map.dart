@@ -23,7 +23,22 @@ import '../../../../network/util/logger.dart';
 bool _refresh = false;
 
 /// 刷新配置
-Future<void> _refreshConfig({bool force = false}) async {
+Future<void> _refreshConfig({bool force = false, Future<void> Function()? change}) async {
+  if (DesktopMultiWindow.isStandalone) {
+    return DesktopMultiWindow.saveStandaloneChanges(() async {
+      if (change == null) {
+        await (await RequestMapManager.instance).flushConfig();
+      } else {
+        await change();
+      }
+      await DesktopMultiWindow.invokeMainWindowMethod("refreshRequestMap");
+    });
+  }
+  if (change != null) {
+    await change();
+    await DesktopMultiWindow.invokeMainWindowMethod("refreshRequestMap");
+    return;
+  }
   if (force) {
     _refresh = false;
     await RequestMapManager.instance.then((manager) => manager.flushConfig());
@@ -92,10 +107,13 @@ class _RequestMapPageState extends State<RequestMapPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-            title: Text(localizations.requestMap, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            toolbarHeight: 36,
-            centerTitle: true),
+        appBar: DesktopMultiWindow.isStandalone
+            ? null
+            : AppBar(
+                title:
+                    Text(localizations.requestMap, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                toolbarHeight: 36,
+                centerTitle: true),
         body: Padding(
             padding: const EdgeInsets.only(left: 15, right: 10),
             child: futureWidget(
@@ -159,13 +177,15 @@ class _RequestMapPageState extends State<RequestMapPage> {
     try {
       var json = jsonDecode(await File(path).readAsString());
       var manager = (await RequestMapManager.instance);
-      if (json is List<dynamic>) {
-        for (var item in json) {
-          var mapRule = RequestMapRule.fromJson(item);
-          var requestMapItem = RequestMapItem.fromJson(item['item']);
-          await manager.addRule(mapRule, requestMapItem);
+      await _refreshConfig(change: () async {
+        if (json is List<dynamic>) {
+          for (var item in json) {
+            var mapRule = RequestMapRule.fromJson(item);
+            var requestMapItem = RequestMapItem.fromJson(item['item']);
+            await manager.addRule(mapRule, requestMapItem);
+          }
         }
-      }
+      });
 
       if (mounted) {
         CustomToast.success(localizations.importSuccess).show(context);
@@ -565,15 +585,14 @@ class _RequestMapEditState extends State<RequestMapEdit> {
                   item.script = scriptCode;
                 }
 
-                var requestMapManager = await RequestMapManager.instance;
-                var index = requestMapManager.rules.indexOf(rule);
-                if (index >= 0) {
-                  await requestMapManager.updateRule(rule, item);
-                } else {
-                  await requestMapManager.addRule(rule, item);
-                }
-
-                DesktopMultiWindow.invokeMainWindowMethod("refreshRequestMap");
+                await _refreshConfig(change: () async {
+                  final manager = await RequestMapManager.instance;
+                  if (manager.rules.contains(rule)) {
+                    await manager.updateRule(rule, item);
+                  } else {
+                    await manager.addRule(rule, item);
+                  }
+                });
                 if (mounted) {
                   Navigator.of(this.context).pop(rule);
                 }

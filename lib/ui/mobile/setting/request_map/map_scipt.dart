@@ -61,7 +61,7 @@ async function onRequest(context, request) {
         editorTheme: monokaiSublimeTheme,
         enableGuideLines: false,
         autoFocus: true,
-        textStyle: codeTextStyle(size: 13),
+        textStyle: codeTextStyle(context, size: 13),
       ),
     );
   }

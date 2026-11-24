@@ -9,7 +9,7 @@ import 'package:proxypin/network/components/manager/request_map_manager.dart';
 import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
 import 'package:proxypin/network/components/manager/script_manager.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
-import 'package:proxypin/ui/desktop/setting/request_block.dart';
+import 'package:proxypin/ui/desktop/toolbar/quick_tools.dart';
 
 class RulesPage extends StatefulWidget {
   final ProxyServer proxyServer;
@@ -37,11 +37,13 @@ class _RulesPageState extends State<RulesPage> {
     super.initState();
     _reload();
     widget.selectIndex.addListener(_onIndexChanged);
+    managerStateVersion.addListener(_reload);
   }
 
   @override
   void dispose() {
     widget.selectIndex.removeListener(_onIndexChanged);
+    managerStateVersion.removeListener(_reload);
     super.dispose();
   }
 
@@ -78,37 +80,37 @@ class _RulesPageState extends State<RulesPage> {
           title: localizations.requestBlock,
           desc: localizations.requestBlockDesc,
           status: _ruleStatus(_blockManager?.enabled, _blockManager?.list.length, isScript: false),
-          onTap: _openBlock),
+          onTap: () => _openRule('requestBlock')),
       _ruleRow(
           icon: Icons.edit_outlined,
           title: localizations.requestRewrite,
           desc: localizations.requestRewriteDesc,
           status: _ruleStatus(_rewriteManager?.enabled, _rewriteManager?.rules.length, isScript: false),
-          onTap: _openRewrite),
+          onTap: () => _openRule('requestRewrite')),
       _ruleRow(
           icon: Icons.compare_arrows_outlined,
           title: localizations.requestMap,
           desc: localizations.requestMapDesc,
           status: _ruleStatus(_mapManager?.enabled, _mapManager?.rules.length, isScript: false),
-          onTap: _openMap),
+          onTap: () => _openRule('requestMap')),
       _ruleRow(
           icon: Icons.lock_outline,
           title: localizations.requestCrypto,
           desc: localizations.requestCryptoDesc,
           status: _ruleStatus(_cryptoManager?.enabled, _cryptoManager?.rules.length, isScript: false),
-          onTap: _openCrypto),
+          onTap: () => _openRule('requestCrypto')),
       _ruleRow(
           icon: Icons.code,
           title: localizations.script,
           desc: localizations.scriptDesc,
           status: _ruleStatus(_scriptManager?.enabled, _scriptManager?.list.length, isScript: true),
-          onTap: _openScript),
+          onTap: () => _openRule('script')),
       _ruleRow(
           icon: Icons.pause_circle_outline,
           title: localizations.breakpoint,
           desc: localizations.breakpointDesc,
           status: _ruleStatus(_breakpointManager?.enabled, _breakpointManager?.list.length, isScript: false),
-          onTap: _openBreakpoint),
+          onTap: () => _openRule('breakpoint')),
     ];
 
     var children = <Widget>[
@@ -126,9 +128,7 @@ class _RulesPageState extends State<RulesPage> {
     for (var i = 0; i < rows.length; i++) {
       if (i > 0) {
         children.add(Container(
-            height: 1,
-            color: theme.dividerColor.withValues(alpha: 0.3),
-            margin: const EdgeInsets.only(left: 58)));
+            height: 1, color: theme.dividerColor.withValues(alpha: 0.3), margin: const EdgeInsets.only(left: 58)));
       }
       children.add(rows[i]);
     }
@@ -142,16 +142,16 @@ class _RulesPageState extends State<RulesPage> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
                 color: theme.colorScheme.surface),
-            child: ClipRRect(borderRadius: BorderRadius.circular(10), child: Column(mainAxisSize: MainAxisSize.min, children: children))));
+            child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Column(mainAxisSize: MainAxisSize.min, children: children))));
   }
 
   String _ruleStatus(bool? enabled, int? count, {required bool isScript}) {
     if (enabled != true) {
       return localizations.notEnabled;
     }
-    return isScript
-        ? localizations.statusEnabledScripts(count ?? 0)
-        : localizations.statusEnabledRules(count ?? 0);
+    return isScript ? localizations.statusEnabledScripts(count ?? 0) : localizations.statusEnabledRules(count ?? 0);
   }
 
   Widget _ruleRow(
@@ -171,8 +171,7 @@ class _RulesPageState extends State<RulesPage> {
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      color: theme.colorScheme.primary.withValues(alpha: 0.08)),
+                      borderRadius: BorderRadius.circular(8), color: theme.colorScheme.primary.withValues(alpha: 0.08)),
                   child: Icon(icon, size: 16, color: theme.colorScheme.primary)),
               const SizedBox(width: 12),
               Expanded(
@@ -183,38 +182,10 @@ class _RulesPageState extends State<RulesPage> {
               ])),
               const SizedBox(width: 12),
               Text(status,
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      color: on ? okColor(theme) : theme.colorScheme.onSurfaceVariant)),
+                  style: TextStyle(fontSize: 11.5, color: on ? okColor(theme) : theme.colorScheme.onSurfaceVariant)),
               Icon(Icons.chevron_right, size: 18, color: theme.colorScheme.onSurfaceVariant),
             ])));
   }
 
-  void _openBlock() async {
-    var manager = _blockManager ?? await RequestBlockManager.instance;
-    if (!mounted) return;
-    await showDialog(
-        barrierDismissible: false, context: context, builder: (context) => RequestBlock(requestBlockManager: manager));
-    _reload();
-  }
-
-  void _openRewrite() {
-    MultiWindow.openWindow(localizations.requestRewrite, 'RequestRewriteWidget', size: const Size(800, 750));
-  }
-
-  void _openMap() {
-    MultiWindow.openWindow(localizations.requestMap, 'RequestMapPage', size: const Size(800, 720));
-  }
-
-  void _openCrypto() {
-    MultiWindow.openWindow(localizations.requestCrypto, 'RequestCryptoPage', size: const Size(820, 750));
-  }
-
-  void _openScript() {
-    MultiWindow.openWindow(localizations.script, 'ScriptWidget', size: const Size(800, 780));
-  }
-
-  void _openBreakpoint() {
-    MultiWindow.openWindow(localizations.breakpoint, 'RequestBreakpointPage', size: const Size(800, 750));
-  }
+  void _openRule(String id) => quickToolOf(id)?.launch(context, widget.proxyServer);
 }

@@ -1,5 +1,5 @@
-/// 自定义快捷工具栏弹框视觉预览（非测试）：flutter run -d macos -t test/quick_tools_preview_main.dart
-/// 只读取本地配置用于展示，不要在预览里点击固定/排序（会 flushConfig 写入真实配置）
+// 自定义快捷工具栏页面视觉预览（非测试）：flutter run -d macos -t test/quick_tools_preview_main.dart
+// 只读取本地配置用于展示，不要在预览里点击固定/排序（会 flushConfig 写入真实配置）
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -21,5 +21,10 @@ Future<void> main() async {
               seedColor: Colors.blue, primary: Colors.blue, surface: Colors.white)),
       home: Scaffold(
           backgroundColor: const Color(0xFFF5F6F8),
-          body: Center(child: CustomizeToolbarDialog(appConfiguration: appConfiguration)))));
+          body: Center(
+              child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: ToolbarSettings(appConfiguration: appConfiguration)))))));
 }

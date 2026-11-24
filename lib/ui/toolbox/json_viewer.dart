@@ -23,8 +23,7 @@ import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -35,6 +34,8 @@ import 'package:proxypin/ui/component/search/finder.dart';
 import 'package:proxypin/utils/highlight_languages.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:share_plus/share_plus.dart';
+
+import 'viewer_app_bar.dart';
 
 /// JSON 查看 / 格式化工具
 /// @author Hongen Wang
@@ -223,13 +224,11 @@ class _JsonViewerPageState extends State<JsonViewerPage> with SingleTickerProvid
       const Divider(height: 1, thickness: 0.3),
       TabBar(
         controller: _tabs,
-        isScrollable: false,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-        unselectedLabelStyle: const TextStyle(fontSize: 13),
+        labelStyle: Theme.of(context).textTheme.labelLarge,
         indicatorSize: TabBarIndicatorSize.label,
         tabs: [
           Tab(text: localizations.text, height: 36),
-          const Tab(text: 'Tree', height: 36),
+          Tab(text: localizations.jsonTreeView, height: 36),
         ],
       ),
       Expanded(
@@ -247,19 +246,8 @@ class _JsonViewerPageState extends State<JsonViewerPage> with SingleTickerProvid
       ),
     ]);
 
-    if (widget.windowId != null && Platform.isWindows) {
-      return Scaffold(
-        body: body,
-      );
-    }
-
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: Platforms.isDesktop() ? const Size.fromHeight(23) : const Size.fromHeight(36),
-        child: AppBar(
-            title: Text("JSON Viewer", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w300)),
-            centerTitle: true),
-      ),
+      appBar: viewerAppBar(context, 'JSON Viewer', windowId: widget.windowId),
       body: body,
     );
   }
@@ -268,7 +256,7 @@ class _JsonViewerPageState extends State<JsonViewerPage> with SingleTickerProvid
     final color = Theme.of(context).colorScheme.primary;
 
     return Container(
-      padding: const EdgeInsets.only(top: 2, bottom: 2, right: 12),
+      padding: const EdgeInsets.only(top: 2, bottom: 2, right: 8),
       child: Wrap(
         spacing: 0,
         runSpacing: 0,
@@ -295,32 +283,32 @@ class _JsonViewerPageState extends State<JsonViewerPage> with SingleTickerProvid
       onPressed: onTap,
       tooltip: tooltip,
       icon: Icon(icon, size: 17, color: tint),
-      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+      style: IconButton.styleFrom(
+        fixedSize: const Size(34, 34),
+        minimumSize: const Size(34, 34),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     );
   }
 
   Widget _textView() {
-    final isDark = Theme.brightnessOf(context) == Brightness.dark;
-    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
-    final pageBg = Theme.of(context).colorScheme.surface;
-    final editorTheme = isDark
-        ? {
-            ...baseTheme,
-            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
-          }
-        : baseTheme;
+    final editorTheme = codeEditorTheme(context);
 
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Container(
         decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
         child: CodeForge(
+          key: ValueKey(editorTheme['root']),
           controller: _controller,
           lineWrap: _wrap,
           language: HighlightLanguages.getLanguage(ContentType.json),
           enableGuideLines: false,
           editorTheme: editorTheme,
-          textStyle: codeTextStyle(size: 13),
+          textStyle: codeTextStyle(context, size: 13),
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
           selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
         ),

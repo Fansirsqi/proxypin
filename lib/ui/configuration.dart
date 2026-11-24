@@ -21,6 +21,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:proxypin/mcp/mcp_listen_options.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
+import 'package:proxypin/ui/component/utils.dart' show DarkPalette;
 import 'package:proxypin/utils/platform.dart';
 
 /// @author wanghongen
@@ -52,18 +54,189 @@ class ThemeModel {
   ThemeMode mode;
   bool useMaterial3;
   bool useAmoled;
-  String color = "Blue";
+  String primary;
+  String? secondary;
+  String? tertiary;
+  String? surface;
+  PaletteStyle style;
+  ThemePreset preset;
 
-  ThemeModel({this.mode = ThemeMode.system, this.useMaterial3 = true, this.useAmoled = false});
+  ThemeModel({
+    this.mode = ThemeMode.system,
+    this.useMaterial3 = true,
+    this.useAmoled = false,
+    this.primary = 'Blue',
+    this.secondary,
+    this.tertiary,
+    this.surface,
+    this.style = PaletteStyle.classic,
+    this.preset = ThemePreset.custom,
+  });
 
-  ThemeModel copy({ThemeMode? mode, bool? useMaterial3, bool? useAmoled}) => ThemeModel(
-        mode: mode ?? this.mode,
-        useMaterial3: useMaterial3 ?? this.useMaterial3,
-        useAmoled: useAmoled ?? this.useAmoled,
+  factory ThemeModel.fromJson(Map<dynamic, dynamic> config) => ThemeModel(
+        mode: ThemeMode.values.firstWhere((mode) => mode.name == config['mode'], orElse: () => ThemeMode.system),
+        useMaterial3: config['useMaterial3'] != false,
+        useAmoled: config['useAmoled'] == true,
+        primary: parseColor(config['themeColor']) == null ? 'Blue' : config['themeColor'] as String,
+        secondary: parseColor(config['themeSecondary']) == null ? null : config['themeSecondary'] as String,
+        tertiary: parseColor(config['themeTertiary']) == null ? null : config['themeTertiary'] as String,
+        surface: parseColor(config['themeSurface']) == null ? null : config['themeSurface'] as String,
+        style: PaletteStyle.values
+            .firstWhere((style) => style.name == config['paletteStyle'], orElse: () => PaletteStyle.classic),
+        preset: ThemePreset.values
+            .firstWhere((preset) => preset.name == config['themePreset'], orElse: () => ThemePreset.custom),
       );
 
-  Color get themeColor => ColorMapping.colors[color] ?? Colors.blue;
+  Map<String, dynamic> toJson() => {
+        'mode': mode.name,
+        'useMaterial3': useMaterial3,
+        'useAmoled': useAmoled,
+        'themeColor': primary,
+        if (secondary != null) 'themeSecondary': secondary,
+        if (tertiary != null) 'themeTertiary': tertiary,
+        if (surface != null) 'themeSurface': surface,
+        'paletteStyle': style.name,
+        'themePreset': preset.name,
+      };
+
+  static final _hexColor = RegExp(r'^#?[0-9a-fA-F]{6}$');
+
+  static Color? parseColor(Object? value) {
+    if (value is! String) return null;
+    if (ColorMapping.colors[value] case final color?) return color;
+    if (!_hexColor.hasMatch(value)) return null;
+    return Color(0xFF000000 | int.parse(value.replaceFirst('#', ''), radix: 16));
+  }
+
+  Color get themeColor => parseColor(primary) ?? ColorMapping.getColor('Blue');
+
+  bool get usesClassicSurfaces => preset == ThemePreset.custom && style == PaletteStyle.classic && surface == null;
+
+  ColorScheme colorScheme(Brightness brightness) {
+    final colors = preset.colorScheme(brightness) ?? _customColorScheme(brightness);
+    if (!useAmoled || brightness != Brightness.dark) return colors;
+    return colors.copyWith(
+      surface: Colors.black,
+      surfaceDim: Colors.black,
+      surfaceBright: Colors.black,
+      surfaceContainerLowest: Colors.black,
+      surfaceContainerLow: Colors.black,
+      surfaceContainer: Colors.black,
+      surfaceContainerHigh: Colors.black,
+      surfaceContainerHighest: Colors.black,
+    );
+  }
+
+  ColorScheme _customColorScheme(Brightness brightness) {
+    ColorScheme fromSeed(Color seed, DynamicSchemeVariant variant) =>
+        ColorScheme.fromSeed(seedColor: seed, brightness: brightness, dynamicSchemeVariant: variant);
+    final scheme = fromSeed(themeColor, style.variant);
+    final secondarySeed = parseColor(secondary);
+    final tertiarySeed = parseColor(tertiary);
+    final secondaryScheme = secondarySeed == null ? null : fromSeed(secondarySeed, style.variant);
+    final tertiaryScheme = tertiarySeed == null ? null : fromSeed(tertiarySeed, style.variant);
+    final surfaceSeed = parseColor(surface);
+    final surfaceScheme = surfaceSeed == null ? null : fromSeed(surfaceSeed, DynamicSchemeVariant.fidelity);
+    var colors = scheme.copyWith(
+      surface: surfaceScheme?.surface,
+      onSurface: surfaceScheme?.onSurface,
+      onSurfaceVariant: surfaceScheme?.onSurfaceVariant,
+      surfaceDim: surfaceScheme?.surfaceDim,
+      surfaceBright: surfaceScheme?.surfaceBright,
+      surfaceContainerLowest: surfaceScheme?.surfaceContainerLowest,
+      surfaceContainerLow: surfaceScheme?.surfaceContainerLow,
+      surfaceContainer: surfaceScheme?.surfaceContainer,
+      surfaceContainerHigh: surfaceScheme?.surfaceContainerHigh,
+      surfaceContainerHighest: surfaceScheme?.surfaceContainerHighest,
+      outline: surfaceScheme?.outline,
+      outlineVariant: surfaceScheme?.outlineVariant,
+      inverseSurface: surfaceScheme?.inverseSurface,
+      onInverseSurface: surfaceScheme?.onInverseSurface,
+      secondary: secondaryScheme?.primary,
+      onSecondary: secondaryScheme?.onPrimary,
+      secondaryContainer: secondaryScheme?.primaryContainer,
+      onSecondaryContainer: secondaryScheme?.onPrimaryContainer,
+      secondaryFixed: secondaryScheme?.primaryFixed,
+      secondaryFixedDim: secondaryScheme?.primaryFixedDim,
+      onSecondaryFixed: secondaryScheme?.onPrimaryFixed,
+      onSecondaryFixedVariant: secondaryScheme?.onPrimaryFixedVariant,
+      tertiary: tertiaryScheme?.primary,
+      onTertiary: tertiaryScheme?.onPrimary,
+      tertiaryContainer: tertiaryScheme?.primaryContainer,
+      onTertiaryContainer: tertiaryScheme?.onPrimaryContainer,
+      tertiaryFixed: tertiaryScheme?.primaryFixed,
+      tertiaryFixedDim: tertiaryScheme?.primaryFixedDim,
+      onTertiaryFixed: tertiaryScheme?.onPrimaryFixed,
+      onTertiaryFixedVariant: tertiaryScheme?.onPrimaryFixedVariant,
+    );
+    if (usesClassicSurfaces) {
+      colors = brightness == Brightness.light
+          ? colors.copyWith(
+              surface: Colors.white,
+              onSurface: const Color(0xFF1F2329),
+              outlineVariant: const Color(0xFFE4E6EB),
+              surfaceContainerLow: const Color(0xFFF5F6F8),
+              surfaceContainer: const Color(0xFFF0F1F3),
+              surfaceContainerHigh: const Color(0xFFE9EBEF),
+              surfaceContainerHighest: const Color(0xFFE4E6EB),
+            )
+          : colors.copyWith(
+              surface: DarkPalette.panel,
+              onSurface: DarkPalette.text1,
+              onSurfaceVariant: DarkPalette.text2,
+              outlineVariant: DarkPalette.border,
+              surfaceContainerLow: DarkPalette.bg,
+              surfaceContainer: DarkPalette.panel,
+              surfaceContainerHigh: DarkPalette.panel,
+              surfaceContainerHighest: DarkPalette.panel,
+            );
+    }
+    return colors;
+  }
 }
+
+enum ThemeColorRole { primary, secondary, tertiary, surface }
+
+enum PaletteStyle {
+  classic(DynamicSchemeVariant.tonalSpot),
+  soft(DynamicSchemeVariant.tonalSpot),
+  vivid(DynamicSchemeVariant.fidelity),
+  neutral(DynamicSchemeVariant.neutral);
+
+  final DynamicSchemeVariant variant;
+
+  const PaletteStyle(this.variant);
+}
+
+enum DetailTabAlignment { left, center, right }
+
+enum DetailTabLabelAlignment { top, center, bottom }
+
+enum HeaderDensity { comfortable, compact, dense }
+
+enum WindowCloseAction {
+  ask,
+  minimize,
+  tray,
+  quit;
+
+  static WindowCloseAction fromConfig(Map<String, dynamic> config) {
+    for (final action in values) {
+      if (action.name == config['windowCloseAction']) return action;
+    }
+    return switch (config['minimizeToTray']) {
+      true => tray,
+      false => quit,
+      _ => ask,
+    };
+  }
+}
+
+typedef DetailLayout = ({
+  DetailTabAlignment tabs,
+  DetailTabLabelAlignment labels,
+  HeaderDensity headers,
+});
 
 class AppConfiguration {
   static const String version = "1.4.0";
@@ -83,7 +256,15 @@ class AppConfiguration {
   ValueNotifier<bool> pipIcon = ValueNotifier(Platform.isAndroid);
 
   /// Headers展示模式: table(逐行) / text(原始文本)
-  String headerViewMode = "table";
+  final ValueNotifier<String> headerViewMode = ValueNotifier("table");
+
+  static const DetailLayout defaultDetailLayout = (
+    tabs: DetailTabAlignment.left,
+    labels: DetailTabLabelAlignment.center,
+    headers: HeaderDensity.compact,
+  );
+
+  final ValueNotifier<DetailLayout> detailLayout = ValueNotifier(defaultDetailLayout);
 
   /// 底部导航栏
   bool bottomNavigation = true;
@@ -127,8 +308,9 @@ class AppConfiguration {
   //左侧面板占比
   double panelRatio = 0.3;
 
-  /// 关闭窗口时最小化到系统托盘
-  bool? minimizeToTray;
+  bool desktopNavigationExpanded = false;
+
+  WindowCloseAction windowCloseAction = WindowCloseAction.ask;
 
   /// 是否启用 MCP 服务
   bool mcpEnabled = false;
@@ -285,13 +467,60 @@ class AppConfiguration {
 
   Color get themeColor => _theme.themeColor;
 
-  set setThemeColor(String colorName) {
-    var color = ColorMapping.colors[colorName];
-    if (color == null || color == themeColor) return;
+  set setThemeColor(String colorName) => setPaletteColor(ThemeColorRole.primary, colorName);
 
-    _theme.color = colorName;
+  String? paletteColor(ThemeColorRole role) => switch (role) {
+        ThemeColorRole.primary => _theme.primary,
+        ThemeColorRole.secondary => _theme.secondary,
+        ThemeColorRole.tertiary => _theme.tertiary,
+        ThemeColorRole.surface => _theme.surface,
+      };
+
+  void setPaletteColor(ThemeColorRole role, String? value) {
+    if (value != null && ThemeModel.parseColor(value) == null) return;
+    if (role == ThemeColorRole.primary) value ??= 'Blue';
+    if (value == paletteColor(role)) return;
+    switch (role) {
+      case ThemeColorRole.primary:
+        _theme.primary = value!;
+      case ThemeColorRole.secondary:
+        _theme.secondary = value;
+      case ThemeColorRole.tertiary:
+        _theme.tertiary = value;
+      case ThemeColorRole.surface:
+        _theme.surface = value;
+    }
     globalChange.value = !globalChange.value;
     flushConfig();
+  }
+
+  ColorScheme colorScheme(Brightness brightness) => _theme.colorScheme(brightness);
+
+  ThemePreset get themePreset => _theme.preset;
+
+  set themePreset(ThemePreset value) {
+    if (value == _theme.preset) return;
+    _theme.preset = value;
+    globalChange.value = !globalChange.value;
+    flushConfig();
+  }
+
+  bool get usesClassicSurfaces => _theme.usesClassicSurfaces;
+
+  PaletteStyle get paletteStyle => _theme.style;
+
+  set paletteStyle(PaletteStyle value) {
+    if (value == _theme.style) return;
+    _theme.style = value;
+    globalChange.value = !globalChange.value;
+    flushConfig();
+  }
+
+  Map<String, dynamic> get themeSettings => _theme.toJson();
+
+  void applyThemeSettings(Map<dynamic, dynamic> settings) {
+    _theme = ThemeModel.fromJson(settings);
+    globalChange.value = !globalChange.value;
   }
 
   ///language
@@ -334,11 +563,7 @@ class AppConfiguration {
 
     try {
       Map<String, dynamic> config = jsonDecode(json);
-      var mode =
-          ThemeMode.values.firstWhere((element) => element.name == config['mode'], orElse: () => ThemeMode.system);
-      _theme =
-          ThemeModel(mode: mode, useMaterial3: config['useMaterial3'] ?? true, useAmoled: config['useAmoled'] ?? false);
-      _theme.color = config['themeColor'] ?? "Blue";
+      _theme = ThemeModel.fromJson(config);
 
       upgradeNoticeV40 = config['upgradeNoticeV40'] ?? true;
       _language = config['language'] == null
@@ -346,7 +571,21 @@ class AppConfiguration {
           : Locale.fromSubtags(languageCode: config['language'], scriptCode: config['languageScript']);
       pipEnabled.value = config['pipEnabled'] ?? true;
       pipIcon.value = config['pipIcon'] ?? false;
-      headerViewMode = config['headerViewMode'] ?? "table";
+      headerViewMode.value = config['headerViewMode'] == 'text' ? 'text' : 'table';
+      detailLayout.value = (
+        tabs: DetailTabAlignment.values.firstWhere(
+          (value) => value.name == config['detailTabAlignment'],
+          orElse: () => defaultDetailLayout.tabs,
+        ),
+        labels: DetailTabLabelAlignment.values.firstWhere(
+          (value) => value.name == config['detailTabLabelAlignment'],
+          orElse: () => defaultDetailLayout.labels,
+        ),
+        headers: HeaderDensity.values.firstWhere(
+          (value) => value.name == config['detailHeaderDensity'],
+          orElse: () => defaultDetailLayout.headers,
+        ),
+      );
       bottomNavigation = config['bottomNavigation'] ?? true;
       memoryCleanupThreshold = config['memoryCleanupThreshold'];
       autoReadEnabled = config['autoReadEnabled'] ?? true;
@@ -365,7 +604,8 @@ class AppConfiguration {
       var appScale = config['appFontScale'];
       appFontScale = appScale is num && appScale >= 0.85 && appScale <= 1.25 ? appScale.toDouble() : 1.0;
       var uiDensityValue = config['uiDensity'];
-      uiDensity = uiDensityValue is String && captureDensities.contains(uiDensityValue) ? uiDensityValue : "comfortable";
+      uiDensity =
+          uiDensityValue is String && captureDensities.contains(uiDensityValue) ? uiDensityValue : "comfortable";
 
       windowSize =
           config['windowSize'] == null ? null : Size(config['windowSize']['width'], config['windowSize']['height']);
@@ -377,7 +617,8 @@ class AppConfiguration {
       if (config['panelRatio'] != null) {
         panelRatio = config['panelRatio'];
       }
-      minimizeToTray = config['minimizeToTray'];
+      desktopNavigationExpanded = config['desktopNavigationExpanded'] == true;
+      windowCloseAction = WindowCloseAction.fromConfig(config);
 
       mcpEnabled = config['mcpEnabled'] ?? false;
       mcpRedactEnabled = config['mcpRedactEnabled'] ?? true;
@@ -397,33 +638,39 @@ class AppConfiguration {
 
   /// 是否正在写入
   bool _isWriting = false;
+  bool _writePending = false;
 
   /// 刷新配置文件
   Future<void> flushConfig() async {
+    _writePending = true;
     if (_isWriting) return;
     _isWriting = true;
 
-    var file = await _path;
-    var exists = await file.exists();
-    if (!exists) {
-      file = await file.create(recursive: true);
-    }
+    try {
+      var file = await _path;
+      if (!await file.exists()) {
+        file = await file.create(recursive: true);
+      }
 
-    var json = jsonEncode(toJson());
-    await file.writeAsString(json);
-    _isWriting = false;
+      while (_writePending) {
+        _writePending = false;
+        await file.writeAsString(jsonEncode(toJson()));
+      }
+    } finally {
+      _isWriting = false;
+    }
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'mode': _theme.mode.name,
-      'themeColor': _theme.color,
-      'useMaterial3': _theme.useMaterial3,
-      'useAmoled': _theme.useAmoled,
+      ..._theme.toJson(),
       'upgradeNoticeV40': upgradeNoticeV40,
       "language": _language?.languageCode,
       "languageScript": _language?.scriptCode,
-      "headerViewMode": headerViewMode,
+      "headerViewMode": headerViewMode.value,
+      "detailTabAlignment": detailLayout.value.tabs.name,
+      "detailTabLabelAlignment": detailLayout.value.labels.name,
+      "detailHeaderDensity": detailLayout.value.headers.name,
       "autoReadEnabled": autoReadEnabled,
       "clearConfirm": clearConfirm,
       "captureListDensity": captureListDensity,
@@ -442,7 +689,8 @@ class AppConfiguration {
         "windowPosition": windowPosition == null ? null : {"dx": windowPosition?.dx, "dy": windowPosition?.dy},
       if (Platform.isWindows) 'windowPositionScale': windowPositionScale,
       if (Platforms.isDesktop()) 'panelRatio': panelRatio,
-      if (Platforms.isDesktop()) 'minimizeToTray': minimizeToTray,
+      if (Platforms.isDesktop()) 'desktopNavigationExpanded': desktopNavigationExpanded,
+      if (Platforms.isDesktop()) 'windowCloseAction': windowCloseAction.name,
       if (Platforms.isDesktop()) 'toolbarPins': toolbarPins.value,
       // MCP 配置所有平台都写入
       'mcpEnabled': mcpEnabled,
@@ -495,4 +743,14 @@ class CaptureRowMetrics {
     final left = selectedInSelectionMode ? leftSelection : (displayDomain ? leftWithDomain : leftIndent);
     return EdgeInsets.only(left: left, right: right, top: top, bottom: bottom);
   }
+}
+
+class AppDisplaySettings extends InheritedNotifier<ValueNotifier<bool>> {
+  final AppConfiguration configuration;
+
+  AppDisplaySettings({super.key, required this.configuration, required super.child})
+      : super(notifier: configuration.globalChange);
+
+  static AppConfiguration? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppDisplaySettings>()?.configuration ?? AppConfiguration.current;
 }

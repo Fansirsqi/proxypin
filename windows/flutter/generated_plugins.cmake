@@ -5,6 +5,8 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   desktop_multi_window
   flutter_js
+  media_kit_libs_windows_video
+  media_kit_video
   permission_handler_windows
   proxy_manager
   screen_retriever_windows

@@ -3,7 +3,6 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/ui/component/app_colors.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
-import 'package:proxypin/ui/desktop/left_menus/replay_tasks.dart' as desktop;
 import 'package:proxypin/ui/mobile/request/replay_tasks.dart';
 import 'package:proxypin/ui/mobile/request/request_editor.dart';
 import 'package:proxypin/ui/toolbox/qr_code_page.dart';
@@ -37,6 +36,14 @@ class _ToolboxState extends State<Toolbox> {
 
   /// 手机端宫格横向收紧（间距 4、项水平 padding 8、按内容定宽），保证 4 项一行整屏放下；桌面端不变
   bool get mobile => Platforms.isMobile();
+
+  Future<void> _openTool(String title, String name, WidgetBuilder builder, {Size size = const Size(800, 680)}) async {
+    if (mobile) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: builder));
+      return;
+    }
+    await MultiWindow.openToolWindow(title, name, size: size);
+  }
 
   /// 分组容器：手机端 = 设计稿 p-sec2 小灰标题 + p-tbcard 白卡宫格（与配置/设置页白卡同一语言）；
   /// 桌面端 = Divider + 14px 标题 + 裸宫格（首组无标题，[desktopHeader] 控制）
@@ -85,199 +92,134 @@ class _ToolboxState extends State<Toolbox> {
             mainAxisAlignment: MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _group(localizations.request, [
-                  IconText(
-                    icon: Icons.http,
-                    text: "HTTP",
-                    color: AppColors.toolHttp,
-                    onTap: httpRequest,
-                    tooltip: localizations.httpRequest,
-                  ),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context)
-                              .push(MaterialPageRoute(builder: (context) => const WebSocketRequestPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow('WebSocket', 'WebSocketRequestPage', size: const Size(800, 600));
-                      },
-                      icon: Icons.wifi_tethering,
-                      text: 'WebSocket',
-                      color: AppColors.toolWebSocket,
-                      tooltip: 'WebSocket'),
-                  IconText(
-                    icon: Icons.javascript,
-                    text: 'JavaScript',
-                    color: AppColors.toolJavaScript,
-                    tooltip: 'JavaScript',
-                    onTap: () async {
-                      if (Platforms.isMobile()) {
-                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => const JavaScript()));
-                        return;
-                      }
-
-                      var size = MediaQuery.of(context).size;
-                      MultiWindow.openWindow('JavaScript', 'JavaScript', size: Size(960, size.height));
-                    },
-                  ),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context)
-                              .push(MaterialPageRoute(builder: (context) => const ReplayTasksPage()));
-                          return;
-                        }
-                        desktop.showReplayTasksDialog(context);
-                      },
-                      icon: Icons.schedule_outlined,
-                      text: localizations.replayTasks,
-                      color: AppColors.toolReplayTasks,
-                      tooltip: localizations.replayTasks),
-              ], desktopHeader: false),
+              _group(
+                  localizations.request,
+                  [
+                    IconText(
+                      icon: Icons.http,
+                      text: "HTTP",
+                      color: AppColors.toolHttp,
+                      onTap: httpRequest,
+                      tooltip: localizations.httpRequest,
+                    ),
+                    IconText(
+                        onTap: () => _openTool('WebSocket', 'WebSocketRequestPage', (_) => const WebSocketRequestPage(),
+                            size: const Size(800, 600)),
+                        icon: Icons.wifi_tethering,
+                        text: 'WebSocket',
+                        color: AppColors.toolWebSocket,
+                        tooltip: 'WebSocket'),
+                    IconText(
+                      icon: Icons.javascript,
+                      text: 'JavaScript',
+                      color: AppColors.toolJavaScript,
+                      tooltip: 'JavaScript',
+                      onTap: () => _openTool('JavaScript', 'JavaScript', (_) => const JavaScript(),
+                          size: Size(960, MediaQuery.sizeOf(context).height)),
+                    ),
+                    IconText(
+                        onTap: () => _openTool(localizations.replayTasks, 'ReplayTasksPage',
+                            (_) => const ReplayTasksPage(), size: const Size(620, 480)),
+                        icon: Icons.schedule_outlined,
+                        text: localizations.replayTasks,
+                        color: AppColors.toolReplayTasks,
+                        tooltip: localizations.replayTasks),
+                  ],
+                  desktopHeader: false),
               _group(localizations.view, [
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const JsonViewerPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow("JSON Viewer", 'JsonViewerPage', size: const Size(780, 820));
-                      },
-                      icon: Icons.data_object,
-                      text: 'JSON',
-                      color: AppColors.toolJson),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const XmlViewerPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow("XML Viewer", 'XmlViewerPage', size: const Size(900, 700));
-                      },
-                      icon: Icons.code,
-                      text: 'XML',
-                      color: AppColors.toolXml),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const TextDiffPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow(localizations.textDiff, 'TextDiffPage', size: const Size(1100, 720));
-                      },
-                      icon: Icons.difference_outlined,
-                      text: localizations.textDiff,
-                      color: AppColors.toolTextDiff),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const TextEditorPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow(localizations.textEditor, 'TextEditorPage', size: const Size(900, 800));
-                      },
-                      icon: Icons.note_alt_outlined,
-                      text: localizations.textEditor,
-                      color: AppColors.toolTextEditor,
-                      tooltip: localizations.textEditor),
+                IconText(
+                    onTap: () => _openTool('JSON Viewer', 'JsonViewerPage', (_) => const JsonViewerPage(),
+                        size: const Size(780, 820)),
+                    icon: Icons.data_object,
+                    text: 'JSON',
+                    color: AppColors.toolJson),
+                IconText(
+                    onTap: () => _openTool('XML Viewer', 'XmlViewerPage', (_) => const XmlViewerPage(),
+                        size: const Size(900, 700)),
+                    icon: Icons.code,
+                    text: 'XML',
+                    color: AppColors.toolXml),
+                IconText(
+                    onTap: () => _openTool(localizations.textDiff, 'TextDiffPage', (_) => const TextDiffPage(),
+                        size: const Size(1100, 720)),
+                    icon: Icons.difference_outlined,
+                    text: localizations.textDiff,
+                    color: AppColors.toolTextDiff),
+                IconText(
+                    onTap: () => _openTool(localizations.textEditor, 'TextEditorPage', (_) => const TextEditorPage(),
+                        size: const Size(900, 800)),
+                    icon: Icons.note_alt_outlined,
+                    text: localizations.textEditor,
+                    color: AppColors.toolTextEditor,
+                    tooltip: localizations.textEditor),
               ]),
               _group(localizations.encode, [
-                  IconText(
-                    onTap: () => encodeWindow(EncoderType.url, context),
-                    icon: Icons.link,
-                    text: 'URL',
-                    color: AppColors.toolUrlEncoder,
-                    tooltip: 'URL Encode/Decode',
-                  ),
-                  IconText(
-                    onTap: () => encodeWindow(EncoderType.base64, context),
-                    icon: Icons.format_bold_outlined,
-                    text: 'Base64',
-                    color: AppColors.toolBase64,
-                    tooltip: 'Base64 Encode/Decode',
-                  ),
-                  IconText(
-                    onTap: () => encodeWindow(EncoderType.unicode, context),
-                    icon: Icons.format_underline_outlined,
-                    text: 'Unicode',
-                    color: AppColors.toolUnicode,
-                    tooltip: 'Unicode Encode/Decode',
-                  ),
-                  IconText(
-                    onTap: () => encodeWindow(EncoderType.md5, context),
-                    icon: Icons.tag_outlined,
-                    text: 'MD5',
-                    color: AppColors.toolMd5,
-                    tooltip: 'MD5 Hash',
-                  ),
+                IconText(
+                  onTap: () => encodeWindow(EncoderType.url, context),
+                  icon: Icons.link,
+                  text: 'URL',
+                  color: AppColors.toolUrlEncoder,
+                  tooltip: 'URL Encode/Decode',
+                ),
+                IconText(
+                  onTap: () => encodeWindow(EncoderType.base64, context),
+                  icon: Icons.format_bold_outlined,
+                  text: 'Base64',
+                  color: AppColors.toolBase64,
+                  tooltip: 'Base64 Encode/Decode',
+                ),
+                IconText(
+                  onTap: () => encodeWindow(EncoderType.unicode, context),
+                  icon: Icons.format_underline_outlined,
+                  text: 'Unicode',
+                  color: AppColors.toolUnicode,
+                  tooltip: 'Unicode Encode/Decode',
+                ),
+                IconText(
+                  onTap: () => encodeWindow(EncoderType.md5, context),
+                  icon: Icons.tag_outlined,
+                  text: 'MD5',
+                  color: AppColors.toolMd5,
+                  tooltip: 'MD5 Hash',
+                ),
               ]),
               _group(localizations.cipher, [
-                  IconText(
-                    onTap: () {
-                      if (Platforms.isMobile()) {
-                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => const AesPage()));
-                        return;
-                      }
-                      MultiWindow.openWindow("AES", "AesPage", size: const Size(700, 672));
-                    },
-                    icon: Icons.enhanced_encryption_outlined,
-                    text: 'AES',
-                    color: AppColors.toolAes,
-                    tooltip: 'AES Encrypt/Decrypt',
-                  ),
+                IconText(
+                  onTap: () => _openTool('AES', 'AesPage', (_) => const AesPage(), size: const Size(700, 672)),
+                  icon: Icons.enhanced_encryption_outlined,
+                  text: 'AES',
+                  color: AppColors.toolAes,
+                  tooltip: 'AES Encrypt/Decrypt',
+                ),
               ]),
               _group(localizations.other, [
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const TimestampPage()));
-                          return;
-                        }
-
-                        MultiWindow.openWindow(localizations.timestamp, 'TimestampPage', size: const Size(700, 350));
-                      },
-                      icon: Icons.av_timer,
-                      text: localizations.timestamp,
-                      color: AppColors.toolTimestamp,
-                      tooltip: localizations.timestamp),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const CertHashPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow(localizations.certHashName, 'CertHashPage');
-                      },
-                      icon: Icons.key_outlined,
-                      color: AppColors.toolCertHash,
-                      // 宫格列宽有限，手机端用短名（tooltip 仍是全称）
-                      text: mobile ? localizations.certHashShort : localizations.certHashName,
-                      tooltip: localizations.certHashName),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const RegExpPage()));
-                          return;
-                        }
-                        MultiWindow.openWindow(localizations.regExp, 'RegExpPage', size: const Size(800, 720));
-                      },
-                      icon: Icons.find_in_page_outlined,
-                      text: localizations.regExp,
-                      color: AppColors.toolRegExp,
-                      tooltip: localizations.regExp),
-                  IconText(
-                      onTap: () async {
-                        if (Platforms.isMobile()) {
-                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const QrCodePage()));
-                          return;
-                        }
-                        MultiWindow.openWindow(localizations.qrCode, 'QrCodePage');
-                      },
-                      icon: Icons.qr_code_2,
-                      text: localizations.qrCode,
-                      color: AppColors.toolQrCode,
-                      tooltip: localizations.qrCode),
+                IconText(
+                    onTap: () => _openTool(localizations.timestamp, 'TimestampPage', (_) => const TimestampPage(),
+                        size: const Size(700, 350)),
+                    icon: Icons.av_timer,
+                    text: localizations.timestamp,
+                    color: AppColors.toolTimestamp,
+                    tooltip: localizations.timestamp),
+                IconText(
+                    onTap: () => _openTool(localizations.certHashName, 'CertHashPage', (_) => const CertHashPage()),
+                    icon: Icons.key_outlined,
+                    color: AppColors.toolCertHash,
+                    // 宫格列宽有限，手机端用短名（tooltip 仍是全称）
+                    text: mobile ? localizations.certHashShort : localizations.certHashName,
+                    tooltip: localizations.certHashName),
+                IconText(
+                    onTap: () => _openTool(localizations.regExp, 'RegExpPage', (_) => const RegExpPage(),
+                        size: const Size(800, 720)),
+                    icon: Icons.find_in_page_outlined,
+                    text: localizations.regExp,
+                    color: AppColors.toolRegExp,
+                    tooltip: localizations.regExp),
+                IconText(
+                    onTap: () => _openTool(localizations.qrCode, 'QrCodePage', (_) => const QrCodePage()),
+                    icon: Icons.qr_code_2,
+                    text: localizations.qrCode,
+                    color: AppColors.toolQrCode,
+                    tooltip: localizations.qrCode),
               ]),
             ],
           ),
@@ -293,7 +235,7 @@ class _ToolboxState extends State<Toolbox> {
 
     var size = MediaQuery.of(context).size;
 
-    MultiWindow.openWindow(localizations.httpRequest, "RequestEditor", size: Size(960, size.height));
+    await MultiWindow.openToolWindow(localizations.httpRequest, 'RequestEditor', size: Size(960, size.height));
   }
 }
 
@@ -343,8 +285,7 @@ class IconText extends StatelessWidget {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                          color: AppColors.tint(color, theme.brightness),
-                          borderRadius: BorderRadius.circular(12)),
+                          color: AppColors.tint(color, theme.brightness), borderRadius: BorderRadius.circular(12)),
                       child: Center(
                           child: IconTheme(
                               data: IconThemeData(size: 24, color: AppColors.icon(color, theme.brightness)),

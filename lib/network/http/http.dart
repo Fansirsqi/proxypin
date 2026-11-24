@@ -15,6 +15,7 @@
  */
 
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:proxypin/network/channel/host_port.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -131,16 +132,20 @@ abstract class HttpMessage {
       return _bodyString!;
     }
 
-    charset ??= this.charset;
-    try {
-      List<int> rawBody = body!;
+    return _decodeBody((body!, headers.contentEncoding, charset ?? this.charset));
+  }
 
-      if (headers.isGzip) {
-        rawBody = gzipDecode(body!);
-      } else if (headers.contentEncoding == 'br') {
-        rawBody = brDecode(body!);
-      } else if (headers.contentEncoding == 'deflate') {
-        rawBody = zlibDecode(body!);
+  static String _decodeBody((List<int>, String?, String?) input) {
+    final (body, encoding, charset) = input;
+    try {
+      List<int> rawBody = body;
+
+      if (encoding == 'gzip') {
+        rawBody = gzipDecode(body);
+      } else if (encoding == 'br') {
+        rawBody = brDecode(body);
+      } else if (encoding == 'deflate') {
+        rawBody = zlibDecode(body);
       }
 
       if (charset == 'utf-8' || charset == 'utf8') {
@@ -149,12 +154,16 @@ abstract class HttpMessage {
 
       return String.fromCharCodes(rawBody);
     } catch (e) {
-      return String.fromCharCodes(body!);
+      return String.fromCharCodes(body);
     }
   }
 
-  Future<String> decodeBodyString() async {
-    if (body == null || body?.isEmpty == true) {
+  static Future<String> _decodeBodyInBackground((List<int>, String?, String?) input) =>
+      Isolate.run(() => _decodeBody(input));
+
+  Future<String> decodeBodyString({bool offload = false}) async {
+    final bytes = body;
+    if (bytes == null || bytes.isEmpty) {
       return "";
     }
 
@@ -162,18 +171,18 @@ abstract class HttpMessage {
       return _bodyString!;
     }
 
-    List<int> rawBody = body!;
-    if (headers.contentEncoding == 'zstd') {
-      rawBody = await zstdDecode(body!) ?? [];
-      if (charset == 'utf-8' || charset == 'utf8') {
-        _bodyString = utf8.decode(rawBody);
-      } else {
-        _bodyString = String.fromCharCodes(rawBody);
-      }
-      return _bodyString!;
+    final encoding = headers.contentEncoding;
+    final bodyCharset = charset;
+    if (encoding == 'zstd') {
+      final rawBody = await zstdDecode(bytes) ?? [];
+      final input = (rawBody, null, bodyCharset);
+      final text = offload ? await _decodeBodyInBackground(input) : _decodeBody(input);
+      if (identical(bytes, body) && headers.contentEncoding == encoding && charset == bodyCharset) _bodyString = text;
+      return text;
     }
 
-    return getBodyString();
+    final input = (bytes, encoding, bodyCharset);
+    return offload ? await _decodeBodyInBackground(input) : _decodeBody(input);
   }
 
   List<String> get cookies => headers.cookies;

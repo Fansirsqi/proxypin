@@ -30,12 +30,9 @@ import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/websocket.dart';
 import 'package:proxypin/storage/histories.dart';
 import 'package:proxypin/ui/component/memory_cleanup.dart';
-import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/ui/configuration.dart';
-import 'package:window_manager/window_manager.dart';
-import 'package:proxypin/utils/navigator.dart';
 import 'package:proxypin/ui/content/panel.dart';
 import 'package:proxypin/ui/desktop/left_menus/favorite.dart';
 import 'package:proxypin/ui/desktop/left_menus/history.dart';
@@ -120,17 +117,7 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
         logger.e('MCP auto-start failed: $e');
       }));
     }
-    // Linux 上工具/编辑器都以路由形式在主窗口打开（见 MultiWindow.openWindow）
-    MultiWindow.onOpenWindow = (widgetName, args) {
-      final navigator = navigatorHelper.navigatorKey.currentState;
-      if (navigator == null) {
-        return;
-      }
-      navigator.push(MaterialPageRoute(
-          builder: (_) => InAppWindowHost(child: multiWindow('0', {'name': widgetName, ...?args}))));
-    };
-
-    panel = NetworkTabController(tabStyle: const TextStyle(fontSize: 12.5), proxyServer: proxyServer);
+    panel = NetworkTabController(proxyServer: proxyServer, showLayoutSettings: false);
     _remoteHistorySubscription = HistoryStorage.onRemoteImported.listen((_) {
       if (mounted) {
         _selectIndex.value = 2;
@@ -154,6 +141,7 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     var navigationView = [
       DesktopRequestListWidget(key: requestListStateKey, proxyServer: proxyServer, list: container, panel: panel),
       Favorites(panel: panel),
@@ -161,23 +149,21 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
       // Toolbox 与移动端共用，桌面侧在这里统一刷白底，不动共享文件。
       // 用 Material 而非 Container(color:)：给内部点击控件提供 Material 祖先（水波纹/hover 才能画上），
       // 同时 SizedBox.expand 撑满 Stack 松约束，避免底部漏灰
-      Material(
-          color: Theme.of(context).colorScheme.surface,
-          child: const SizedBox.expand(child: Toolbox()))
+      Material(color: Theme.of(context).colorScheme.surface, child: const SizedBox.expand(child: Toolbox()))
     ];
 
     return Scaffold(
         appBar: Tab(
             height: 52, // 设计稿 .toolbar 高 52
             child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(bottom: BorderSide(color: chromeBorderColor(Theme.of(context)), width: 1))),
-          child: Platform.isMacOS
-              ? Toolbar(proxyServer, requestListStateKey)
-              : WindowsToolbar(title: Toolbar(proxyServer, requestListStateKey)),
-        )),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: desktopChromeColor(theme),
+                  border: Border(bottom: BorderSide(color: chromeBorderColor(theme), width: 1))),
+              child: Platform.isMacOS
+                  ? Toolbar(proxyServer, requestListStateKey)
+                  : WindowsToolbar(title: Toolbar(proxyServer, requestListStateKey)),
+            )),
         bottomNavigationBar:
             DesktopStatusBar(proxyServer: proxyServer, container: container, requestListStateKey: requestListStateKey),
         body: Row(
@@ -250,32 +236,5 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
                               '7. Fixed display of compressed and non-standard SSE bodies, close-delimited response body handling (#956), app filter loading failures, and other issues; minimum iOS version raised to iOS 15.\n',
                       style: const TextStyle(fontSize: 14))));
         });
-  }
-}
-
-/// 内嵌（Linux）打开的“子窗口”页面宿主：主窗口是无边框的，路由盖住自绘工具栏后
-/// 就没法拖动窗口了，这里在页面顶部叠一层透明的标题栏拖动区。
-/// 用 translucent 行为，点击仍然落到页面自己的返回/操作按钮上，只有拖动才移动窗口。
-class InAppWindowHost extends StatelessWidget {
-  final Widget child;
-
-  const InAppWindowHost({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(children: [
-      child,
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 40,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onPanStart: (_) => windowManager.startDragging(),
-          child: const SizedBox.expand(),
-        ),
-      ),
-    ]);
   }
 }

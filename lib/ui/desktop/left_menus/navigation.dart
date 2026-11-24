@@ -19,12 +19,8 @@ import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
-import 'package:proxypin/ui/desktop/preference.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:proxypin/ui/desktop/setting/setting.dart';
 
-///左侧导航栏（设计稿 .rail / .ritem：宽 64，项 52x48 圆角 9，图标 19 + 标签 10）
-/// @author wanghongen
-/// 2024/8/6
 class LeftNavigationBar extends StatefulWidget {
   final AppConfiguration appConfiguration;
   final ProxyServer proxyServer;
@@ -38,108 +34,152 @@ class LeftNavigationBar extends StatefulWidget {
 }
 
 class _LeftNavigationBarState extends State<LeftNavigationBar> {
-  AppLocalizations get localizations => AppLocalizations.of(context)!;
-
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final expanded = widget.appConfiguration.desktopNavigationExpanded;
+    final width = expanded ? (MediaQuery.sizeOf(context).width / 4).clamp(48.0, 160.0) : 48.0;
+    final items = [
+      (icon: 'list', label: localizations.navRequests),
+      (icon: 'star', label: localizations.favorites),
+      (icon: 'clock', label: localizations.history),
+      (icon: 'wrench', label: localizations.toolbox),
+    ];
+
     return ValueListenableBuilder(
         valueListenable: widget.selectIndex,
         builder: (_, index, __) {
           if (index == -1) {
-            return const SizedBox();
+            return const SizedBox.shrink();
           }
 
-          var items = [
-            (icon: 'list', label: localizations.navRequests),
-            (icon: 'star', label: localizations.favorites),
-            (icon: 'clock', label: localizations.history),
-            (icon: 'wrench', label: localizations.toolbox),
-          ];
-
-          return Container(
-            // 设计稿 64，实际观感偏宽收窄到 60；非中文标签长，76 → 72
-            width: (localizations.localeName == 'zh' || localizations.localeName == 'zh_Hant') ? 60 : 72,
-            decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                border: Border(right: BorderSide(color: chromeBorderColor(Theme.of(context)), width: 1))),
-            child: Column(children: <Widget>[
-              const SizedBox(height: 10),
-              for (var i = 0; i < items.length; i++)
-                Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: _RailItem(
-                        icon: items[i].icon,
-                        label: items[i].label,
-                        active: index == i,
-                        onTap: () => widget.selectIndex.value = i)),
-              const Spacer(),
-              _RailItem(
-                  icon: 'gear',
-                  label: localizations.preferenceShort,
-                  compact: true,
-                  onTap: () {
-                    showDialog(
-                        context: context,
-                        builder: (_) => Preference(widget.appConfiguration, widget.proxyServer.configuration));
-                  }),
-              const SizedBox(height: 2),
-              Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _RailItem(
-                      icon: 'chat',
-                      label: localizations.feedback,
-                      compact: true,
-                      onTap: () => launchUrl(Uri.parse("https://github.com/wanghongenpin/proxypin/issues")))),
-            ]),
+          return SizedBox(
+            width: width.toDouble(),
+            child: Material(
+              color: desktopChromeColor(theme),
+              child: DecoratedBox(
+                decoration: BoxDecoration(border: Border(right: BorderSide(color: chromeBorderColor(theme)))),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(5, 6, 6, 6),
+                  child: CustomScrollView(
+                    primary: false,
+                    slivers: [
+                      SliverList.list(children: [
+                        _RailItem(
+                          icon: (color) => Icon(Icons.view_sidebar_outlined, size: 18, color: color),
+                          label: expanded ? localizations.collapseNavigation : localizations.expandNavigation,
+                          expanded: expanded,
+                          trailing: expanded ? const Icon(Icons.chevron_left, size: 16) : null,
+                          onTap: () {
+                            setState(() => widget.appConfiguration.desktopNavigationExpanded = !expanded);
+                            widget.appConfiguration.flushConfig();
+                          },
+                        ),
+                        const Divider(height: 12, indent: 5, endIndent: 5),
+                        for (var indexOfItem = 0; indexOfItem < items.length; indexOfItem++)
+                          _RailItem(
+                            icon: (color) => SvgIcon(items[indexOfItem].icon, color: color),
+                            label: items[indexOfItem].label,
+                            expanded: expanded,
+                            active: index == indexOfItem,
+                            onTap: () => widget.selectIndex.value = indexOfItem,
+                          ),
+                      ]),
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: SizedBox(
+                            width: 37,
+                            child: _RailItem(
+                              icon: (color) => SvgIcon('gear', color: color),
+                              label: localizations.setting,
+                              expanded: false,
+                              onTap: () => showDialog<void>(
+                                context: context,
+                                builder: (_) => Setting(
+                                  proxyServer: widget.proxyServer,
+                                  appConfiguration: widget.appConfiguration,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           );
         });
   }
 }
 
-/// 设计稿 .ritem（52x48 / 图标 19 / 标签 10）基础上略放大：56x52 圆角 9，图标 20px + 标签 10.5px，选中 primary-soft 底 + primary 字
 class _RailItem extends StatelessWidget {
-  final String icon;
+  final Widget Function(Color) icon;
   final String label;
+  final bool expanded;
   final bool active;
-
-  /// 次级入口（底部 偏好/反馈）：纯图标无文案，弱化视觉层级（文案靠 tooltip）
-  final bool compact;
+  final Widget? trailing;
   final VoidCallback onTap;
 
-  const _RailItem(
-      {required this.icon, required this.label, this.active = false, this.compact = false, required this.onTap});
+  const _RailItem({
+    required this.icon,
+    required this.label,
+    required this.expanded,
+    required this.onTap,
+    this.active = false,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
-    var theme = Theme.of(context);
-    // 设计稿 .ritem：未选中用 --text-3（暗黑 #6F747D），选中主色
-    var color = active
-        ? theme.colorScheme.primary
-        : (theme.brightness == Brightness.light ? theme.colorScheme.onSurfaceVariant : DarkPalette.text3);
-    return Tooltip(
+    final theme = Theme.of(context);
+    final color = active ? theme.colorScheme.onSecondaryContainer : theme.colorScheme.onSurfaceVariant;
+    final radius = BorderRadius.circular(7);
+    final rowHeight = 36 + theme.visualDensity.vertical * 2;
+    return Semantics(
+      button: true,
+      selected: active ? true : null,
+      label: label,
+      child: Tooltip(
         message: label,
-        preferBelow: false,
+        excludeFromSemantics: true,
         child: InkWell(
-            borderRadius: BorderRadius.circular(9),
-            onTap: onTap,
-            child: Container(
-                width: compact ? 36 : 56,
-                height: compact ? 36 : 52,
-                decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(9),
-                    color: active ? primarySoftBg(theme) : null),
-                child: compact
-                    ? Center(child: SvgIcon(icon, size: 18, color: color))
-                    : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        SvgIcon(icon, size: 20, color: color),
-                        const SizedBox(height: 4),
-                        Text(label,
-                            maxLines: 1,
-                            style: TextStyle(
-                                fontSize: 10.5,
-                                height: 1.1,
-                                color: color,
-                                fontWeight: active ? FontWeight.w500 : FontWeight.w400)),
-                      ]))));
+          borderRadius: radius,
+          onTap: onTap,
+          child: Ink(
+            decoration:
+                BoxDecoration(borderRadius: radius, color: active ? theme.colorScheme.secondaryContainer : null),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: rowHeight),
+              child: ExcludeSemantics(
+                child: IconTheme.merge(
+                  data: IconThemeData(color: color),
+                  child: expanded
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          child: Row(children: [
+                            icon(color),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelLarge?.copyWith(color: color)),
+                            ),
+                            if (trailing != null) trailing!,
+                          ]),
+                        )
+                      : Center(heightFactor: 1, child: icon(color)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

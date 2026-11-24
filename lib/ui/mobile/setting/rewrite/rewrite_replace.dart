@@ -243,7 +243,7 @@ class RewriteReplaceState extends State<MobileRewriteReplace> {
                 enableGuideLines: false,
                 selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
                 editorTheme: Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
-                textStyle: codeTextStyle(size: 14),
+                textStyle: codeTextStyle(context, size: 14),
                 finderBuilder: (c, controller) => FindPanelView(controller: controller),
               );
             }))

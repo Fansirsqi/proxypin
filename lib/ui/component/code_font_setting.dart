@@ -39,7 +39,7 @@ class _CodeFontFamilyTileState extends State<CodeFontFamilyTile> {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
     final current = config?.editorFontFamily;
 
     // 当前值是自定义/不常见字体时也要能显示出来
@@ -141,7 +141,7 @@ class CodeFontSizeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
     final current = config?.editorFontSize ?? 13;
     final values = sizes.contains(current) ? sizes : ([...sizes, current]..sort());
 
@@ -184,7 +184,7 @@ class CaptureDensityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppConfiguration.current;
+    final config = AppDisplaySettings.of(context);
 
     return ListTile(
       contentPadding: EdgeInsets.zero,

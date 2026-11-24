@@ -150,7 +150,7 @@ class RequestRowState extends State<RequestRow> {
     var highlightColor = color(url);
 
     // 行密度来自偏好设置（抓包列表密度）
-    var metrics = AppConfiguration.current?.captureRowMetrics;
+    var metrics = AppDisplaySettings.of(context)?.captureRowMetrics;
     var titleSize = (metrics?.titleSize ?? 13) + 1;
 
     return GestureDetector(

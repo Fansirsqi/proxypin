@@ -23,6 +23,8 @@ import 'package:proxypin/ui/component/code_font_setting.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/ui/configuration.dart';
 
+import 'theme_palette.dart';
+
 /// @author wanghongen
 /// 2024/1/2
 class Preference extends StatefulWidget {
@@ -62,156 +64,113 @@ class _PreferenceState extends State<Preference> {
   Widget build(BuildContext context) {
     AppLocalizations localizations = AppLocalizations.of(context)!;
     var titleStyle = Theme.of(context).textTheme.titleSmall;
-    var subtitleStyle = TextStyle(fontSize: 12, color: Colors.grey);
+    final theme = Theme.of(context);
+    final subtitleStyle = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
-    return AlertDialog(
-        scrollable: true,
-        title: Row(children: [
-          const Icon(Icons.settings, size: 20),
-          const SizedBox(width: 10),
-          Text(localizations.preference, style: Theme.of(context).textTheme.titleMedium),
-          const Expanded(child: Align(alignment: Alignment.topRight, child: CloseButton()))
-        ]),
-        content: SizedBox(
-            width: 400,
-            child: Column(children: [
-              Row(children: [
-                SizedBox(width: 100, child: Text("${localizations.language}: ", style: titleStyle)),
-                DropdownButton<Locale>(
-                    value: appConfiguration.language,
-                    onChanged: (Locale? value) => appConfiguration.language = value,
-                    focusColor: Colors.transparent,
-                    items: [
-                      DropdownMenuItem(value: null, child: Text(localizations.followSystem)),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "zh"), child: Text("简体中文")),
-                      const DropdownMenuItem(
-                          value: Locale.fromSubtags(languageCode: "zh", scriptCode: "Hant"), child: Text("繁體中文")),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "vi"), child: Text("Tiếng Việt")),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "th"), child: Text("ไทย")),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "es"), child: Text("Español")),
-                      const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "en"), child: Text("English")),
-                    ]),
-              ]),
-              //主题
-              Row(children: [
-                SizedBox(width: 100, child: Text("${localizations.theme}: ", style: titleStyle)),
-                DropdownButton<String>(
-                    value: appConfiguration.useAmoled && appConfiguration.themeMode == ThemeMode.dark
-                        ? 'amoled'
-                        : appConfiguration.themeMode.name,
-                    onChanged: (String? value) {
-                      appConfiguration.useAmoled = value == 'amoled';
-                      appConfiguration.themeMode = value == 'amoled'
-                          ? ThemeMode.dark
-                          : ThemeMode.values.firstWhere((mode) => mode.name == value);
-                    },
-                    focusColor: Colors.transparent,
-                    items: [
-                      DropdownMenuItem(value: ThemeMode.system.name, child: Text(localizations.followSystem)),
-                      DropdownMenuItem(value: ThemeMode.light.name, child: Text(localizations.themeLight)),
-                      DropdownMenuItem(value: ThemeMode.dark.name, child: Text(localizations.themeDark)),
-                      DropdownMenuItem(value: 'amoled', child: Text(localizations.amoledBlack)),
-                    ]),
-              ]),
-              Tooltip(
-                  message: localizations.material3,
-                  child: Row(
-                    children: [
-                      SizedBox(width: 100, child: Text("Material3: ", style: titleStyle)),
-                      Transform.scale(
-                          scale: 0.75,
-                          child: Switch(
-                            value: appConfiguration.useMaterial3,
-                            onChanged: (bool value) => appConfiguration.useMaterial3 = value,
-                          ))
-                    ],
-                  )),
-              //主题颜色
-              Row(children: [
-                SizedBox(
-                    width: 120,
-                    child: Text("${localizations.themeColor}: ", style: titleStyle, textAlign: TextAlign.start)),
-              ]),
-              themeColor(context),
-              const Divider(),
-              ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.minimizeToTrayTitle, style: titleStyle),
-                  subtitle: Text(localizations.minimizeToTraySubtitle, style: subtitleStyle),
-                  trailing: SwitchWidget(
-                      scale: 0.75,
-                      value: appConfiguration.minimizeToTray ?? false,
-                      onChanged: (value) {
-                        appConfiguration.minimizeToTray = value;
-                        appConfiguration.flushConfig();
-                      })),
-              ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.autoStartup, style: titleStyle),
-                  //默认是否启动
-                  subtitle: Text(localizations.autoStartupDescribe, style: subtitleStyle),
-                  trailing: SwitchWidget(
-                      scale: 0.75,
-                      value: configuration.startup,
-                      onChanged: (value) {
-                        configuration.startup = value;
-                        configuration.flushConfig();
-                      })),
-              ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.clearConfirm, style: titleStyle),
-                  subtitle: Text(localizations.clearConfirmSubtitle, style: subtitleStyle),
-                  trailing: SwitchWidget(
-                      scale: 0.75,
-                      value: appConfiguration.clearConfirm,
-                      onChanged: (value) {
-                        appConfiguration.clearConfirm = value;
-                        appConfiguration.flushConfig();
-                      })),
-              const Divider(),
-              // 抓包列表行密度：宽松 / 紧凑 / 极紧凑
-              CaptureDensityTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              // 代码窗口字体（请求体/响应体/脚本编辑器共用）
-              CodeFontFamilyTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              CodeFontSizeTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              const Divider(),
-              // 整体界面字体 / 字号 / 密度（不含代码窗口）
-              AppFontFamilyTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              AppFontScaleTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              UiDensityTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
-              const Divider(),
-              ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(localizations.memoryCleanup, style: titleStyle),
-                  subtitle: Text(localizations.memoryCleanupSubtitle, style: subtitleStyle),
-                  trailing: memoryCleanup(context, localizations)),
-
-              SizedBox(height: 5),
-            ])));
-  }
-
-  ///主题颜色
-  Widget themeColor(BuildContext context) {
-    return Wrap(
-      children: ColorMapping.colors.entries.map((pair) {
-        var dividerColor = Theme.of(context).focusColor;
-        var background = appConfiguration.themeColor == pair.value ? dividerColor : Colors.transparent;
-
-        return GestureDetector(
-            onTap: () => appConfiguration.setThemeColor = pair.key,
-            child: Tooltip(
-              message: pair.key,
-              child: Container(
-                margin: const EdgeInsets.all(4.0),
-                decoration: BoxDecoration(
-                  color: background,
-                  border: Border.all(color: Colors.transparent, width: 8),
-                ),
-                child: Dot(color: pair.value, size: 15),
-              ),
-            ));
-      }).toList(),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(localizations.language, style: titleStyle),
+        trailing: DropdownButton<Locale>(
+            value: appConfiguration.language,
+            onChanged: (Locale? value) => appConfiguration.language = value,
+            focusColor: Colors.transparent,
+            items: [
+              DropdownMenuItem(value: null, child: Text(localizations.followSystem)),
+              const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "zh"), child: Text("简体中文")),
+              const DropdownMenuItem(
+                  value: Locale.fromSubtags(languageCode: "zh", scriptCode: "Hant"), child: Text("繁體中文")),
+              const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "vi"), child: Text("Tiếng Việt")),
+              const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "th"), child: Text("ไทย")),
+              const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "es"), child: Text("Español")),
+              const DropdownMenuItem(value: Locale.fromSubtags(languageCode: "en"), child: Text("English")),
+            ]),
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(localizations.theme, style: titleStyle),
+        trailing: DropdownButton<String>(
+            value: appConfiguration.useAmoled && appConfiguration.themeMode == ThemeMode.dark
+                ? 'amoled'
+                : appConfiguration.themeMode.name,
+            onChanged: (String? value) {
+              appConfiguration.useAmoled = value == 'amoled';
+              appConfiguration.themeMode =
+                  value == 'amoled' ? ThemeMode.dark : ThemeMode.values.firstWhere((mode) => mode.name == value);
+            },
+            focusColor: Colors.transparent,
+            items: [
+              DropdownMenuItem(value: ThemeMode.system.name, child: Text(localizations.followSystem)),
+              DropdownMenuItem(value: ThemeMode.light.name, child: Text(localizations.themeLight)),
+              DropdownMenuItem(value: ThemeMode.dark.name, child: Text(localizations.themeDark)),
+              DropdownMenuItem(value: 'amoled', child: Text(localizations.amoledBlack)),
+            ]),
+      ),
+      Tooltip(
+          message: localizations.material3,
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('Material 3', style: titleStyle),
+            value: appConfiguration.useMaterial3,
+            onChanged: (value) => appConfiguration.useMaterial3 = value,
+          )),
+      const SizedBox(height: 8),
+      Text(localizations.themeColor, style: titleStyle),
+      ThemePaletteSettings(configuration: appConfiguration),
+      const Divider(height: 24),
+      AppFontFamilyTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      AppFontScaleTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      UiDensityTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      CaptureDensityTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      CodeFontFamilyTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      CodeFontSizeTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      const Divider(height: 24),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(localizations.trayCloseTitle, style: titleStyle),
+          subtitle: DropdownButton<WindowCloseAction>(
+              isExpanded: true,
+              value: appConfiguration.windowCloseAction,
+              items: [
+                DropdownMenuItem(value: WindowCloseAction.ask, child: Text(localizations.trayCloseAsk)),
+                DropdownMenuItem(value: WindowCloseAction.minimize, child: Text(localizations.windowCloseMinimize)),
+                DropdownMenuItem(value: WindowCloseAction.tray, child: Text(localizations.trayCloseMinimizeToTray)),
+                DropdownMenuItem(value: WindowCloseAction.quit, child: Text(localizations.trayCloseExitAnyway)),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => appConfiguration.windowCloseAction = value);
+                appConfiguration.flushConfig();
+              })),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(localizations.autoStartup, style: titleStyle),
+          //默认是否启动
+          subtitle: Text(localizations.autoStartupDescribe, style: subtitleStyle),
+          trailing: SwitchWidget(
+              scale: 0.75,
+              value: configuration.startup,
+              onChanged: (value) {
+                configuration.startup = value;
+                configuration.flushConfig();
+              })),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(localizations.clearConfirm, style: titleStyle),
+          subtitle: Text(localizations.clearConfirmSubtitle, style: subtitleStyle),
+          trailing: SwitchWidget(
+              scale: 0.75,
+              value: appConfiguration.clearConfirm,
+              onChanged: (value) {
+                appConfiguration.clearConfirm = value;
+                appConfiguration.flushConfig();
+              })),
+      ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(localizations.memoryCleanup, style: titleStyle),
+          subtitle: Text(localizations.memoryCleanupSubtitle, style: subtitleStyle),
+          trailing: memoryCleanup(context, localizations)),
+    ]);
   }
 
   bool memoryCleanupOpened = false;

@@ -37,7 +37,7 @@ class RequestMapManager {
     var file = File(path + itemPath);
     await file.create(recursive: true);
     final itemJson = jsonEncode(item.toJson());
-    file.writeAsString(itemJson);
+    await file.writeAsString(itemJson);
 
     rule.itemPath = itemPath;
     _mapItemsCache[rule] = item;

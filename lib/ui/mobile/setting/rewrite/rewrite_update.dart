@@ -294,7 +294,7 @@ class _RewriteUpdateAddState extends State<RewriteUpdateEdit> {
                     selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
                     editorTheme: Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
                     enableGuideLines: false,
-                    textStyle: codeTextStyle(size: 14),
+                    textStyle: codeTextStyle(context, size: 14),
                   )),
             ])));
   }
