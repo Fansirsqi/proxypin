@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:proxypin/ui/component/multi_window_compat.dart';
+import 'package:proxypin/ui/component/standalone_window_payload.dart';
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -78,10 +79,8 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
 
   //请求详情
   if (argument['name'] == 'RequestDetailPage') {
-    final requestJson = argument['request'] as Map<String, dynamic>?;
-    final responseJson = argument['response'] as Map<String, dynamic>?;
-    final request = requestJson == null ? null : HttpRequest.fromJson(requestJson);
-    final response = responseJson == null ? null : HttpResponse.fromJson(responseJson);
+    final request = _windowRequest(argument['request']);
+    final response = _windowResponse(argument['response']);
     request?.response = response;
     response?.request = request;
     return NetworkTabController(
@@ -117,11 +116,10 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
   }
 
   if (argument['name'] == RewriteRuleEdit.windowName) {
-    final request = HttpRequest.fromJson(Map<String, dynamic>.from(argument['request'] as Map));
-    final responseJson = argument['response'] as Map?;
-    if (responseJson != null) {
-      request.response = HttpResponse.fromJson(Map<String, dynamic>.from(responseJson))..request = request;
-    }
+    final request = _windowRequest(argument['request'])!;
+    final response = _windowResponse(argument['response']);
+    request.response = response;
+    response?.request = request;
     return CapturedRewriteWindow(
       windowId: windowId,
       request: request,
@@ -212,6 +210,12 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
 
   return const SizedBox();
 }
+
+HttpRequest? _windowRequest(Object? request) =>
+    request is Map ? HttpRequest.fromJson(request.cast<String, dynamic>()) : request as HttpRequest?;
+
+HttpResponse? _windowResponse(Object? response) =>
+    response is Map ? HttpResponse.fromJson(response.cast<String, dynamic>()) : response as HttpResponse?;
 
 enum Operation {
   add,
@@ -309,23 +313,27 @@ class MultiWindow {
   }
 
   static Future<void> openToolWindow(String title, String widgetName,
-      {Size size = const Size(800, 680), Map<String, dynamic>? args}) async {
+      {Size size = const Size(800, 680), Map<String, dynamic>? args, StandaloneWindowPayload? payload}) async {
     final standalone = Platform.isLinux;
     final singleton = _singletonWidgets.contains(widgetName);
     if (standalone && singleton && !_openingWidgets.add(widgetName)) return;
     try {
       if (standalone && DesktopMultiWindow.isStandalone) {
-        await DesktopMultiWindow.invokeMainWindowMethod('openToolWindow', {
+        final targetId = await DesktopMultiWindow.invokeMainWindowMethod<String>('openToolWindow', {
           'title': title,
           'name': widgetName,
           'width': size.width,
           'height': size.height,
           'args': args,
+          if (payload != null) 'deferredPayload': true,
         });
+        if (payload != null && targetId != null) {
+          await DesktopMultiWindow.writeForwardedPayload(targetId, payload);
+        }
       } else if (standalone) {
         await registerMethodHandler();
         await DesktopMultiWindow.launchStandaloneWindow(title, size, {'name': widgetName, ...?args},
-            singleton: singleton);
+            singleton: singleton, payload: payload);
       } else {
         await openWindow(title, widgetName, size: size, args: args);
       }
@@ -334,6 +342,16 @@ class MultiWindow {
     } finally {
       if (standalone && singleton) _openingWidgets.remove(widgetName);
     }
+  }
+
+  static Future<void> openCapturedWindow(String title, String widgetName, Size size,
+      {HttpRequest? request, HttpResponse? response, Map<String, dynamic>? args}) {
+    if (Platform.isLinux) {
+      return openToolWindow(title, widgetName,
+          size: size, args: args, payload: StandaloneWindowPayload(request, response));
+    }
+    return openToolWindow(title, widgetName,
+        size: size, args: {...?args, 'request': request?.toJson(), 'response': response?.toJson()});
   }
 
   /// 查找已存在的单例子窗口并前置。窗口销毁后原生注册表可能短暂残留已注销 channel 的条目，
@@ -469,11 +487,19 @@ Future<void> _registerMethodHandler() async {
     }
     if (call.method == 'openToolWindow') {
       final args = call.arguments as Map;
+      final title = args['title'] as String;
+      final name = args['name'] as String;
+      final size = Size((args['width'] as num).toDouble(), (args['height'] as num).toDouble());
+      final pageArguments = (args['args'] as Map?)?.cast<String, dynamic>();
+      if (args['deferredPayload'] == true && fromWindowId.startsWith('tool:')) {
+        return DesktopMultiWindow.launchStandaloneWindow(title, size, {'name': name, ...?pageArguments},
+            payloadSource: fromWindowId);
+      }
       await MultiWindow.openToolWindow(
-        args['title'] as String,
-        args['name'] as String,
-        size: Size((args['width'] as num).toDouble(), (args['height'] as num).toDouble()),
-        args: (args['args'] as Map?)?.cast<String, dynamic>(),
+        title,
+        name,
+        size: size,
+        args: pageArguments,
       );
       return null;
     }

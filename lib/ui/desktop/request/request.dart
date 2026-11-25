@@ -592,14 +592,12 @@ class _RequestWidgetState extends State<RequestWidget> {
 
   // 新窗口打开详情
   Future<void> openDetailInNewWindow() {
-    return MultiWindow.openToolWindow(
+    return MultiWindow.openCapturedWindow(
       localizations.captureDetail,
       'RequestDetailPage',
-      args: {
-        'request': widget.request,
-        'response': widget.request.response ?? widget.response.get(),
-      },
-      size: Size(850, 900),
+      const Size(850, 900),
+      request: widget.request,
+      response: widget.request.response ?? widget.response.get(),
     );
   }
 

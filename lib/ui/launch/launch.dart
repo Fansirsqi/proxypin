@@ -232,11 +232,15 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
+    final isPreventClose = await windowManager.isPreventClose();
     if (Platform.isLinux) {
-      await appExit();
+      if (isPreventClose) {
+        onWindowClose();
+      } else {
+        await appExit();
+      }
       return AppExitResponse.cancel;
     }
-    bool isPreventClose = await windowManager.isPreventClose();
     if (!isPreventClose || Platform.isMacOS) {
       await appExit();
     }

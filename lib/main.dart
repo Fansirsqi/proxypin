@@ -45,21 +45,14 @@ import 'l10n/app_localizations.dart';
 ///@author wanghongen
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await RustLib.init();
-  } catch (e) {
-    // code_forge Rust FFI initialization may fail on iOS 14.x due to
-    // deployment-target / cargokit-build incompatibilities. Degrade
-    // gracefully instead of crashing the whole app at startup.
-    print('RustLib.init failed: $e');
-  }
+  final standaloneWindow = args.firstOrNull == DesktopMultiWindow.standaloneWindowArgument;
+  if (!standaloneWindow) await _initializeCodeEditor();
 
   final windowController = Platforms.isDesktop() ? await DesktopMultiWindow.ensureInitialized() : null;
 
   var instance = AppConfiguration.instance;
 
   //多窗口
-  final standaloneWindow = args.firstOrNull == DesktopMultiWindow.standaloneWindowArgument;
   if (args.firstOrNull == 'multi_window' || standaloneWindow) {
     final controller = windowController!;
     final windowArguments =
@@ -67,6 +60,10 @@ void main(List<String> args) async {
     final argument =
         windowArguments.isEmpty ? <String, dynamic>{} : jsonDecode(windowArguments) as Map<String, dynamic>;
     DesktopMultiWindow.initializeFromArguments(argument);
+    final deferredPayload = standaloneWindow && DesktopMultiWindow.hasStandalonePayload;
+    if (standaloneWindow && !deferredPayload && argument['name'] != 'TimestampPage') {
+      await _initializeCodeEditor();
+    }
     var appConfiguration = await instance;
     final settingsWindow = argument['name'] == Setting.windowName;
     if (settingsWindow) {
@@ -95,9 +92,11 @@ void main(List<String> args) async {
     if (Platform.isMacOS) {
       windowManager.setTitleBarStyle(TitleBarStyle.hidden);
     }
-    DesktopMultiWindow.prepareWindow();
+    final shown = DesktopMultiWindow.prepareWindow();
     runApp(FluentApp(
-      multiWindow(controller.windowId, argument),
+      deferredPayload
+          ? _deferredWindow(shown, controller.windowId, argument)
+          : multiWindow(controller.windowId, argument),
       appConfiguration,
       independentWindow: true,
       resizeBorder: standaloneWindow,
@@ -133,6 +132,33 @@ void main(List<String> args) async {
   }
 
   runApp(FluentApp(DesktopHomePage(await configuration, appConfiguration), appConfiguration));
+}
+
+Future<void> _initializeCodeEditor() async {
+  try {
+    await RustLib.init();
+  } catch (error) {
+    print('RustLib.init failed: $error');
+  }
+}
+
+Widget _deferredWindow(Future<bool> shown, String windowId, Map<String, dynamic> arguments) {
+  final content = shown.then((shown) async {
+    if (!shown) throw StateError('Could not show the tool window');
+    final (payload, _) = await (DesktopMultiWindow.loadStandalonePayload(), _initializeCodeEditor()).wait;
+    return multiWindow(windowId, {...arguments, ...payload});
+  });
+  return FutureBuilder(
+    future: content,
+    builder: (context, snapshot) => snapshot.data ??
+        Scaffold(
+          body: Center(
+            child: snapshot.hasError
+                ? Text(AppLocalizations.of(context)!.fail)
+                : const CircularProgressIndicator(),
+          ),
+        ),
+  );
 }
 
 class FluentApp extends StatefulWidget {

@@ -16,6 +16,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/http/http.dart';
@@ -45,6 +46,8 @@ class _DesktopStatusBarState extends State<DesktopStatusBar> {
   int _lastDownBytes = 0;
   int _upRate = 0;
   int _downRate = 0;
+  ValueNotifier<int?>? _visibleCount;
+  bool _refreshScheduled = false;
 
   @override
   void initState() {
@@ -52,18 +55,50 @@ class _DesktopStatusBarState extends State<DesktopStatusBar> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
     widget.container.addListener(_listListener);
     SocketLaunch.startStatus.addListener(_refresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bindVisibleCount());
+  }
+
+  @override
+  void didUpdateWidget(covariant DesktopStatusBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.container != widget.container) {
+      oldWidget.container.removeListener(_listListener);
+      widget.container.addListener(_listListener);
+    }
+    if (oldWidget.requestListStateKey != widget.requestListStateKey) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _bindVisibleCount());
+    }
+  }
+
+  void _bindVisibleCount() {
+    if (!mounted) return;
+    final count = widget.requestListStateKey.currentState?.visibleCount;
+    if (_visibleCount == count) return;
+    _visibleCount?.removeListener(_refresh);
+    _visibleCount = count;
+    count?.addListener(_refresh);
+    _refresh();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _visibleCount?.removeListener(_refresh);
     widget.container.removeListener(_listListener);
     SocketLaunch.startStatus.removeListener(_refresh);
     super.dispose();
   }
 
   void _refresh() {
-    if (mounted) {
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      if (_refreshScheduled) return;
+      _refreshScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshScheduled = false;
+        if (mounted) setState(() {});
+      });
+    } else {
       setState(() {});
     }
   }
@@ -103,11 +138,8 @@ class _DesktopStatusBarState extends State<DesktopStatusBar> {
     var theme = Theme.of(context);
     var running = SocketLaunch.startStatus.value.get() == true;
     var total = widget.container.length;
-    var filtered = 0;
-    var view = widget.requestListStateKey.currentState?.currentView();
-    if (view != null && view.length < total) {
-      filtered = total - view.length;
-    }
+    final visible = widget.requestListStateKey.currentState?.visibleCount.value ?? total;
+    final filtered = total - visible;
 
     var style = TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant);
     return Container(

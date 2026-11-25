@@ -12,6 +12,7 @@ import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/ui/component/search_condition.dart';
 import 'package:proxypin/ui/component/selection_action_bar.dart';
+import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/panel.dart';
 import 'package:proxypin/ui/desktop/request/list.dart';
@@ -401,15 +402,23 @@ void main() {
 
     final menuItem = find.ancestor(
       of: find.text(labels.showCaptureRowDetails),
-      matching: find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem),
+      matching: find.byWidgetPredicate((widget) => widget is CustomPopupMenuItem),
     );
-    Future<CheckedPopupMenuItem<dynamic>> openMenu() async {
+    Future<void> openMenu() async {
       await tester.tap(find.byIcon(Icons.more_vert_outlined));
       await tester.pumpAndSettle();
-      return tester.widget(menuItem);
     }
 
-    expect((await openMenu()).checked, isTrue);
+    await openMenu();
+    final searchItem = find.ancestor(
+      of: find.text(labels.search),
+      matching: find.byWidgetPredicate((widget) => widget is CustomPopupMenuItem),
+    );
+    expect(tester.getSize(menuItem).height, tester.getSize(searchItem).height);
+    final detailsLabel = find.descendant(of: menuItem, matching: find.text(labels.showCaptureRowDetails));
+    final searchLabel = find.descendant(of: searchItem, matching: find.text(labels.search));
+    expect(tester.widget<Text>(detailsLabel).style, tester.widget<Text>(searchLabel).style);
+    expect(find.descendant(of: menuItem, matching: find.byIcon(Icons.check_box_outlined)), findsOneWidget);
     await tester.tap(menuItem);
     await tester.pumpAndSettle();
     expect(config.showCaptureRowDetails, isFalse);
@@ -417,7 +426,8 @@ void main() {
 
     config.setDisplayDensity(DisplayDensitySetting.captureList, 5, commit: false);
     await tester.pumpAndSettle();
-    expect((await openMenu()).checked, isFalse);
+    await openMenu();
+    expect(find.descendant(of: menuItem, matching: find.byIcon(Icons.check_box_outline_blank)), findsOneWidget);
     await tester.tap(menuItem);
     await tester.pumpAndSettle();
     expect(config.showCaptureRowDetails, isTrue);

@@ -21,13 +21,13 @@ Future<void> openCapturedRewrite(
       : (HttpResponse(response.status, protocolVersion: response.protocolVersion)
         ..headers.addAll(response.headers)
         ..body = response.body);
-  await MultiWindow.openToolWindow(
+  await MultiWindow.openCapturedWindow(
     AppLocalizations.of(context)!.requestRewriteRule,
     RewriteRuleEdit.windowName,
-    size: const Size(800, 680),
+    const Size(800, 680),
+    request: requestDraft,
+    response: responseDraft,
     args: {
-      'request': requestDraft.toJson(),
-      'response': responseDraft?.toJson(),
       'ruleType': (ruleType ?? (response == null ? RuleType.requestReplace : RuleType.responseReplace)).name,
     },
   );

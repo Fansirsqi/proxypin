@@ -94,6 +94,24 @@ class _PreferenceState extends State<Preference> {
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(localizations.trayCloseTitle, style: titleStyle),
+          subtitle: DropdownButton<WindowCloseAction>(
+              isExpanded: true,
+              value: appConfiguration.windowCloseAction,
+              items: [
+                DropdownMenuItem(value: WindowCloseAction.ask, child: Text(localizations.trayCloseAsk)),
+                DropdownMenuItem(value: WindowCloseAction.minimize, child: Text(localizations.windowCloseMinimize)),
+                DropdownMenuItem(value: WindowCloseAction.tray, child: Text(localizations.trayCloseMinimizeToTray)),
+                DropdownMenuItem(value: WindowCloseAction.quit, child: Text(localizations.trayCloseExitAnyway)),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => appConfiguration.windowCloseAction = value);
+                appConfiguration.flushConfig();
+              })),
+      const Divider(height: 24),
+      ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(localizations.language, style: titleStyle),
         trailing: DropdownButton<Locale>(
@@ -151,23 +169,6 @@ class _PreferenceState extends State<Preference> {
       CodeFontSizeTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
       EditorColorSchemeTile(titleStyle: titleStyle),
       const Divider(height: 24),
-      ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(localizations.trayCloseTitle, style: titleStyle),
-          subtitle: DropdownButton<WindowCloseAction>(
-              isExpanded: true,
-              value: appConfiguration.windowCloseAction,
-              items: [
-                DropdownMenuItem(value: WindowCloseAction.ask, child: Text(localizations.trayCloseAsk)),
-                DropdownMenuItem(value: WindowCloseAction.minimize, child: Text(localizations.windowCloseMinimize)),
-                DropdownMenuItem(value: WindowCloseAction.tray, child: Text(localizations.trayCloseMinimizeToTray)),
-                DropdownMenuItem(value: WindowCloseAction.quit, child: Text(localizations.trayCloseExitAnyway)),
-              ],
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => appConfiguration.windowCloseAction = value);
-                appConfiguration.flushConfig();
-              })),
       ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(localizations.autoStartup, style: titleStyle),

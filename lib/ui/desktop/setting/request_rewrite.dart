@@ -827,7 +827,13 @@ class _RewriteRuleEditState extends State<RewriteRuleEdit> {
       return DesktopRewriteUpdate(key: rewriteUpdateKey, items: items, ruleType: ruleType, request: widget.request);
     }
 
-    return DesktopRewriteReplace(key: rewriteReplaceKey, items: items, ruleType: ruleType, windowId: widget.windowId);
+    return DesktopRewriteReplace(
+      key: rewriteReplaceKey,
+      items: items,
+      ruleType: ruleType,
+      windowId: widget.windowId,
+      stabilizeEditorWidth: widget.independent && Platform.isLinux,
+    );
   }
 
   Widget textField(String label, TextEditingController controller, String hint,

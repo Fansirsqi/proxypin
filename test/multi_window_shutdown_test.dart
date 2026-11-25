@@ -13,6 +13,7 @@ import 'package:proxypin/network/channel/network.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/launch/launch.dart';
+import 'package:window_manager/window_manager.dart';
 
 const _prefix = 'proxypin:tool:';
 const _windowChannel = MethodChannel('window_manager');
@@ -216,7 +217,7 @@ void main() {
     await tool.commands.cancel();
   });
 
-  testWidgets('Linux framework exit runs the save path while the native close guard is active', (tester) async {
+  testWidgets('Linux framework exit asks before running the save path while close is guarded', (tester) async {
     final messenger = tester.binding.defaultBinaryMessenger;
     var preventClose = false;
     var destroyCalls = 0;
@@ -237,8 +238,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(preventClose, isTrue);
 
-    final observer = tester.state(find.byType(SocketLaunch)) as WidgetsBindingObserver;
+    final state = tester.state(find.byType(SocketLaunch));
+    final observer = state as WidgetsBindingObserver;
+    final labels = AppLocalizations.of(state.context)!;
     expect(await observer.didRequestAppExit(), AppExitResponse.cancel);
+    (state as WindowListener).onWindowClose();
+    await tester.pumpAndSettle();
+    expect(find.text(labels.trayCloseTitle), findsOneWidget);
+    expect(proxy.stopCalls, 0);
+    await tester.tap(find.widgetWithText(TextButton, labels.cancel));
+    await tester.pumpAndSettle();
+    expect(find.text(labels.trayCloseTitle), findsNothing);
+    expect(proxy.stopCalls, 0);
+
+    expect(await observer.didRequestAppExit(), AppExitResponse.cancel);
+    await tester.pumpAndSettle();
+    expect(find.text(labels.trayCloseTitle), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, labels.trayCloseExitAnyway));
+    await tester.pumpAndSettle();
     expect(proxy.stopCalls, 1);
     expect(preventClose, isTrue);
     expect(destroyCalls, 0);

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import 'dart:async';
+
 import 'package:re_highlight/languages/json.dart';
 
 import 'package:code_forge/code_forge.dart';
@@ -37,8 +39,15 @@ class DesktopRewriteReplace extends StatefulWidget {
   final String? windowId;
   final RuleType ruleType;
   final List<RewriteItem>? items;
+  final bool stabilizeEditorWidth;
 
-  const DesktopRewriteReplace({super.key, this.items, required this.ruleType, this.windowId});
+  const DesktopRewriteReplace({
+    super.key,
+    this.items,
+    required this.ruleType,
+    this.windowId,
+    this.stabilizeEditorWidth = false,
+  });
 
   @override
   State<DesktopRewriteReplace> createState() => RewriteReplaceState();
@@ -243,13 +252,14 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
               };
               bodyTextController.addListener(_bodyListener!);
 
-              return ThemedCodeEditor(
+              final editor = ThemedCodeEditor(
                 controller: bodyTextController,
                 lineWrap: true,
                 language: isJsonText() ? langJson : null,
                 textStyle: codeTextStyle(context, size: 14),
                 finderBuilder: (c, controller) => FindPanelView(controller: controller),
               );
+              return widget.stabilizeEditorWidth ? _StableEditorWidth(child: editor) : editor;
             }),
           ),
         )
@@ -460,6 +470,59 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
 
   InputBorder focusedBorder() {
     return OutlineInputBorder(borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2));
+  }
+}
+
+class _StableEditorWidth extends StatefulWidget {
+  const _StableEditorWidth({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_StableEditorWidth> createState() => _StableEditorWidthState();
+}
+
+class _StableEditorWidthState extends State<_StableEditorWidth> {
+  Timer? _resize;
+  double? _editorWidth;
+  double? _pendingWidth;
+
+  void _updateWidth(double width) {
+    _editorWidth ??= width;
+    if (_pendingWidth == width) return;
+    _resize?.cancel();
+    _pendingWidth = null;
+    if (width == _editorWidth) return;
+    _pendingWidth = width;
+    _resize = Timer(const Duration(milliseconds: 150), () {
+      setState(() {
+        _editorWidth = width;
+        _pendingWidth = null;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _updateWidth(constraints.maxWidth);
+        return ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topLeft,
+            minWidth: _editorWidth,
+            maxWidth: _editorWidth,
+            child: widget.child,
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _resize?.cancel();
+    super.dispose();
   }
 }
 

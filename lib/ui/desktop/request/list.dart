@@ -60,6 +60,8 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
   final GlobalKey<RequestSequenceState> requestSequenceKey = GlobalKey<RequestSequenceState>();
   final GlobalKey<DomainWidgetState> domainListKey = GlobalKey<DomainWidgetState>();
   final GlobalKey<SearchState> searchKey = GlobalKey<SearchState>();
+  final visibleCount = ValueNotifier<int?>(null);
+  SearchModel? _appliedSearch;
   TabController? _tabController;
 
   //请求列表容器
@@ -91,6 +93,7 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
     RequestWidget.removeRowStatesByIds(container.map((request) => request.requestId));
     selectionController.clear();
     _selectionScrollController.dispose();
+    visibleCount.dispose();
     super.dispose();
   }
 
@@ -173,6 +176,7 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
                               onExportSelected: exportSelected,
                             ),
                             onRemove: domainListRemove,
+                            onVisibleCountChanged: (count) => visibleCount.value = count,
                           ),
                           RequestSequence(
                             key: requestSequenceKey,
@@ -187,8 +191,8 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
                             ),
                             onRemove: sequenceRemove,
                             onInitialized: () {
-                              if (searchKey.currentState?.searchModel.isNotEmpty == true) {
-                                requestSequenceKey.currentState?.search(searchKey.currentState!.searchModel);
+                              if (_appliedSearch case final model? when model.isNotEmpty) {
+                                requestSequenceKey.currentState?.search(model);
                               }
                             },
                           ),
@@ -242,12 +246,14 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
         onSelected: _onMenuSelected,
         itemBuilder: (BuildContext context) {
           final display = AppDisplaySettings.of(context);
+          final showDetails = display?.showCaptureRowDetails ?? true;
           return <PopupMenuEntry<_RequestListMenuAction>>[
-            CheckedPopupMenuItem(
-              value: _RequestListMenuAction.showDetails,
-              checked: display?.showCaptureRowDetails ?? true,
+            _menuItem(
+              _RequestListMenuAction.showDetails,
+              icon: Icon(showDetails ? Icons.check_box_outlined : Icons.check_box_outline_blank, size: 16),
+              text: localizations.showCaptureRowDetails,
+              checked: showDetails,
               enabled: display != null,
-              child: Text(localizations.showCaptureRowDetails),
             ),
             _menuItem(_RequestListMenuAction.search,
                 icon: const Icon(Icons.search, size: 17), text: localizations.search),
@@ -266,10 +272,29 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
         });
   }
 
-  PopupMenuEntry<_RequestListMenuAction> _menuItem(_RequestListMenuAction value,
-      {required Icon icon, required String text}) {
+  PopupMenuEntry<_RequestListMenuAction> _menuItem(
+    _RequestListMenuAction value, {
+    required Icon icon,
+    required String text,
+    bool? checked,
+    bool enabled = true,
+  }) {
+    final label = IconText(icon: icon, text: text, textStyle: const TextStyle(fontSize: 13));
     return CustomPopupMenuItem<_RequestListMenuAction>(
-        value: value, height: 37, child: IconText(icon: icon, text: text, textStyle: const TextStyle(fontSize: 13)));
+      value: value,
+      height: 37,
+      enabled: enabled,
+      child: checked == null
+          ? label
+          : Semantics(
+              checked: checked,
+              child: Tooltip(
+                message: text,
+                excludeFromSemantics: true,
+                child: DefaultTextStyle.merge(maxLines: 1, overflow: TextOverflow.ellipsis, child: label),
+              ),
+            ),
+    );
   }
 
   void _onMenuSelected(_RequestListMenuAction action) {
@@ -340,6 +365,7 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
   }
 
   void search(SearchModel searchModel) {
+    _appliedSearch = searchModel;
     domainListKey.currentState?.search(searchModel);
     requestSequenceKey.currentState?.search(searchModel);
   }

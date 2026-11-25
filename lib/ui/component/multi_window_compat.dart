@@ -7,6 +7,7 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/standalone_window_payload.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -32,6 +33,9 @@ class DesktopMultiWindow {
   static const String _prepareClose = 'prepare_close';
   static const String _commitClose = 'commit_close';
   static const String _cancelClose = 'cancel_close';
+  static const String _payloadEvent = '__windowPayload';
+  static const String _payloadReady = '__windowPayloadReady';
+  static const String _payloadAck = '__windowPayloadAck';
   static const _standaloneMethods = {
     _saveDetailPreferencesMethod,
     ...desktopSettingsMethods,
@@ -92,6 +96,10 @@ class DesktopMultiWindow {
   static Future<_CloseSaveState>? _standaloneCloseSaves;
   static int? _preparedClose;
   static bool _standaloneDisconnected = false;
+  static Completer<({List<String> chunks, String? error})>? _standalonePayload;
+  static List<String> _payloadChunks = [];
+  static final _standaloneOutput = _PipeOutput(stdout);
+  static final Map<String, Completer<bool>> _payloadAcks = {};
   static Map<dynamic, dynamic>? _themeSettings;
   static void Function(Map<dynamic, dynamic>)? onThemeChanged;
   static Future<void> Function(Map<dynamic, dynamic>)? onSaveDetailPreferences;
@@ -100,6 +108,7 @@ class DesktopMultiWindow {
   static String? get currentWindowId => _currentWindowId;
   static String? get windowTitle => _windowTitle;
   static bool get isStandalone => _standaloneInput != null;
+  static bool get hasStandalonePayload => _standalonePayload != null;
   static Map<dynamic, dynamic>? get themeSettings => _themeSettings;
 
   static Future<WindowController> ensureInitialized({String? mainWindowId}) async {
@@ -122,6 +131,8 @@ class DesktopMultiWindow {
     _mainWindowScreenScale = scale is num && _validScale(scale.toDouble()) ? scale.toDouble() : null;
     _windowTitle = arguments.remove(_windowTitleKey) as String?;
     _windowSize = _sizeFromJson(arguments.remove(_windowSizeKey));
+    _standalonePayload = arguments.remove(_payloadEvent) == true ? Completer() : null;
+    _payloadChunks = [];
     final launchTheme = arguments.remove(_themeKey) as Map?;
     _themeSettings ??= launchTheme;
   }
@@ -135,69 +146,85 @@ class DesktopMultiWindow {
     ));
   }
 
-  static Future<void> launchStandaloneWindow(
+  static Future<String?> launchStandaloneWindow(
     String title,
     Size size,
     Map<String, dynamic> pageArguments, {
     bool singleton = false,
+    StandaloneWindowPayload? payload,
+    String? payloadSource,
     @visibleForTesting Future<Process> Function()? startProcess,
   }) async {
     if (_closingStandaloneWindows) throw StateError('The main window is closing');
-    final launch = _launchStandaloneWindow(title, size, pageArguments, singleton, startProcess);
+    final launch = _launchStandaloneWindow(title, size, pageArguments, singleton, payload, payloadSource, startProcess);
     _standaloneLaunches.add(launch);
     try {
-      await launch;
+      return await launch;
     } finally {
       _standaloneLaunches.remove(launch);
     }
   }
 
-  static Future<void> _launchStandaloneWindow(
+  static Future<String?> _launchStandaloneWindow(
     String title,
     Size size,
     Map<String, dynamic> pageArguments,
     bool singleton,
+    StandaloneWindowPayload? payload,
+    String? payloadSource,
     Future<Process> Function()? startProcess,
   ) async {
     final name = pageArguments['name'] as String;
     final existing = _standaloneSingletons[name];
     if (singleton && existing != null) {
-      _sendStandaloneEvent(existing, 'window_focus', null);
-      return;
+      await _sendStandaloneEvent(existing, 'window_focus', null);
+      return null;
     }
+    final hasPayload = payload != null || payloadSource != null;
     final arguments = jsonEncode({
       ...pageArguments,
       _windowTitleKey: title,
       _windowSizeKey: {'width': size.width, 'height': size.height},
       _themeKey: _themeSettings,
+      if (hasPayload) _payloadEvent: true,
     });
-    final process =
-        await (startProcess?.call() ?? Process.start(Platform.resolvedExecutable, [standaloneWindowArgument]));
+    final process = await (startProcess?.call() ?? Process.start(Platform.resolvedExecutable, [standaloneWindowArgument]));
     final id = 'tool:${process.pid}';
-    final tool = _StandaloneProcess(process);
+    final tool = _StandaloneProcess(process, hasPayload: hasPayload, payloadSource: payloadSource);
     _standaloneProcesses[id] = tool;
     if (singleton) _standaloneSingletons[name] = tool;
     process.stdin.done.ignore();
-    process.stdin.writeln(arguments);
-    if (_themeSettings case final settings?) {
-      _sendStandaloneEvent(tool, _themeMethod, settings);
-    }
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) async {
-      if (!line.startsWith(_standaloneRequestPrefix)) {
+      final prefix = line.indexOf('$_standaloneRequestPrefix{');
+      if (prefix < 0) {
         print(line);
         return;
       }
+      final Map<String, dynamic> request;
       try {
-        final request = jsonDecode(line.substring(_standaloneRequestPrefix.length)) as Map<String, dynamic>;
+        request = jsonDecode(line.substring(prefix + _standaloneRequestPrefix.length)) as Map<String, dynamic>;
+      } on FormatException {
+        logger.w('Invalid tool window message');
+        return;
+      }
+      try {
         if (tool.handleCloseMessage(request)) return;
+        if (request[_payloadReady] case final bool ready) {
+          tool.completePayloadReady(ready);
+          return;
+        }
+        if (request[_payloadEvent] case final String receiver) {
+          _relayPayload(tool, id, receiver, request['frame'] as Map<String, dynamic>).ignore();
+          return;
+        }
         final method = request['method'] as String;
         if (!_standaloneMethods.contains(method) || (_handler == null && method != _saveDetailPreferencesMethod)) {
           throw UnsupportedError(method);
         }
         final result = await _dispatchMethodCall(MethodCall(method, request['arguments']), id);
-        process.stdin.writeln(jsonEncode({'result': result}));
+        await tool.input.send(jsonEncode({'result': result}));
       } catch (error) {
-        process.stdin.writeln(jsonEncode({'error': error.toString()}));
+        if (!tool.processExited) tool.input.send(jsonEncode({'error': error.toString()})).ignore();
       }
     }, onError: (Object error, StackTrace stackTrace) {
       logger.e('Tool output failed', error: error, stackTrace: stackTrace);
@@ -206,14 +233,101 @@ class DesktopMultiWindow {
       logger.e('Tool error output failed', error: error, stackTrace: stackTrace);
     });
     unawaited(tool.exited.then((code) {
-      process.stdin.close().ignore();
+      tool.input.close().ignore();
       if (_standaloneProcesses[id] == tool) _standaloneProcesses.remove(id);
       if (_standaloneSingletons[name] == tool) _standaloneSingletons.remove(name);
+      for (final target in _standaloneProcesses.values) {
+        if (target.payloadSource == id) unawaited(target.failPayload('The source window closed during transfer'));
+      }
       onStandaloneClosed?.call(id);
       if (code != 0) {
         logger.e('Tool window ${pageArguments['name']} exited with code $code');
       }
     }));
+    await tool.input.send(arguments);
+    if (_themeSettings case final settings?) {
+      _sendStandaloneEvent(tool, _themeMethod, settings).ignore();
+    }
+    if (payload != null) {
+      unawaited(_sendLocalPayload(tool, payload));
+      return null;
+    }
+    if (payloadSource == null) return null;
+    if (!_standaloneProcesses.containsKey(payloadSource)) {
+      unawaited(tool.failPayload('The source window closed during launch'));
+    }
+    return id;
+  }
+
+  static Future<void> _sendLocalPayload(_StandaloneProcess tool, StandaloneWindowPayload payload) async {
+    try {
+      if (!await tool.payloadReady!.future) return;
+      final chunks = await payload.encode();
+      for (var index = 0; index < chunks.length; index++) {
+        if (!await tool.sendPayload({'chunk': chunks[index]})) return;
+        if (index % 32 == 31) await Future<void>.delayed(Duration.zero);
+      }
+      await tool.sendPayload({'done': true});
+    } catch (_, stackTrace) {
+      logger.e('Could not encode the window payload', stackTrace: stackTrace);
+      await tool.failPayload('Could not encode the window payload');
+    }
+  }
+
+  static Future<void> _relayPayload(
+    _StandaloneProcess source,
+    String sourceId,
+    String targetId,
+    Map<String, dynamic> frame,
+  ) async {
+    final target = _standaloneProcesses[targetId];
+    var accepted = false;
+    if (target != null && target.payloadSource == sourceId && await target.payloadReady!.future && !source.processExited) {
+      accepted = await target.sendPayload(frame);
+    }
+    if (!source.processExited) {
+      await source.input.send(jsonEncode({'event': _payloadAck, 'arguments': {'id': targetId, 'accepted': accepted}}));
+    }
+  }
+
+  static Future<void> writeForwardedPayload(String windowId, StandaloneWindowPayload payload) async {
+    List<String> chunks;
+    try {
+      chunks = await payload.encode();
+    } catch (_, stackTrace) {
+      logger.e('Could not encode the window payload', stackTrace: stackTrace);
+      await _sendForwardedFrame(windowId, {'error': 'Could not encode the window payload'});
+      return;
+    }
+    for (final chunk in chunks) {
+      if (!await _sendForwardedFrame(windowId, {'chunk': chunk})) return;
+    }
+    await _sendForwardedFrame(windowId, {'done': true});
+  }
+
+  static Future<bool> _sendForwardedFrame(String windowId, Map<String, dynamic> frame) async {
+    if (_standaloneDisconnected) return false;
+    final ack = Completer<bool>();
+    _payloadAcks[windowId] = ack;
+    try {
+      await _writeStandaloneMessage({_payloadEvent: windowId, 'frame': frame}, flush: true);
+      return await ack.future;
+    } finally {
+      _payloadAcks.remove(windowId);
+    }
+  }
+
+  static Future<Map<String, Object?>> loadStandalonePayload() async {
+    final receiver = _standalonePayload!;
+    try {
+      if (!receiver.isCompleted) await _writeStandaloneMessage({_payloadReady: true});
+      final result = await receiver.future;
+      if (result.error case final error?) throw StateError(error);
+      return await StandaloneWindowPayload.decode(result.chunks);
+    } finally {
+      _standalonePayload = null;
+      _payloadChunks = [];
+    }
   }
 
   static Future<void> closeStandaloneWindows({Duration timeout = const Duration(seconds: 5)}) async {
@@ -254,6 +368,16 @@ class DesktopMultiWindow {
         final message = jsonDecode(input.current) as Map<String, dynamic>;
         if (message['event'] case final String event) {
           final arguments = message['arguments'];
+          if (event == _payloadEvent) {
+            _receivePayload(arguments as Map<String, dynamic>);
+            continue;
+          }
+          if (event == _payloadAck) {
+            final ack = arguments as Map<String, dynamic>;
+            final pending = _payloadAcks[ack['id']];
+            if (pending != null && !pending.isCompleted) pending.complete(ack['accepted'] == true);
+            continue;
+          }
           final handling = switch (event) {
             _prepareClose || _commitClose || _cancelClose => _handleStandaloneClose(event, arguments as int),
             _ => _handleWindowEvent(MethodCall(event, arguments)),
@@ -273,6 +397,10 @@ class DesktopMultiWindow {
       }
     } finally {
       _standaloneDisconnected = true;
+      _receivePayload({'error': 'Main window disconnected'});
+      for (final ack in _payloadAcks.values) {
+        if (!ack.isCompleted) ack.complete(false);
+      }
       final reply = _standaloneReply;
       _standaloneReply = null;
       reply?.completeError(StateError('Main window disconnected'));
@@ -280,26 +408,48 @@ class DesktopMultiWindow {
     }
   }
 
+  static void _receivePayload(Map<String, dynamic> payload) {
+    final receiver = _standalonePayload;
+    if (receiver == null || receiver.isCompleted) return;
+    if (payload['chunk'] case final String chunk) {
+      _payloadChunks.add(chunk);
+    } else {
+      final error = payload['done'] == true ? null : payload['error'] as String? ?? 'Invalid window payload';
+      receiver.complete((chunks: error == null ? _payloadChunks : <String>[], error: error));
+      _payloadChunks = [];
+    }
+  }
+
+  static Future<void> _writeStandaloneMessage(Map<String, dynamic> message, {bool flush = false}) =>
+      _standaloneOutput.send('$_standaloneRequestPrefix${jsonEncode(message)}', flush: flush);
+
   static Future<T?> _invokeStandalone<T>(String method, dynamic arguments) {
     final reply = _standaloneQueue.then((_) async {
       if (_standaloneDisconnected) throw StateError('Main window disconnected');
       final pending = Completer<dynamic>();
       _standaloneReply = pending;
-      stdout.writeln('$_standaloneRequestPrefix${jsonEncode({'method': method, 'arguments': arguments})}');
-      return await pending.future as T?;
+      pending.future.ignore();
+      try {
+        await _writeStandaloneMessage({'method': method, 'arguments': arguments});
+        return await pending.future as T?;
+      } finally {
+        if (identical(_standaloneReply, pending)) _standaloneReply = null;
+      }
     });
     _standaloneQueue = reply.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return reply;
   }
 
-  static void _sendStandaloneEvent(_StandaloneProcess tool, String event, dynamic arguments) {
-    if (!tool.processExited) tool.process.stdin.writeln(jsonEncode({'event': event, 'arguments': arguments}));
-  }
+  static Future<void> _sendStandaloneEvent(_StandaloneProcess tool, String event, dynamic arguments,
+      {bool flush = false}) =>
+      tool.processExited
+          ? Future.value()
+          : tool.input.send(jsonEncode({'event': event, 'arguments': arguments}), flush: flush);
 
   static Future<void> updateTheme(Map<String, dynamic> settings) async {
     _themeSettings = settings;
     for (final process in _standaloneProcesses.values) {
-      _sendStandaloneEvent(process, _themeMethod, settings);
+      _sendStandaloneEvent(process, _themeMethod, settings).ignore();
     }
     try {
       final windows = await WindowController.getAll();
@@ -444,7 +594,8 @@ class DesktopMultiWindow {
   }
 
   static Future<void> _sendCloseMessage(Map<String, dynamic> message) {
-    final output = _closeOutput ?? stdout;
+    final output = _closeOutput;
+    if (output == null) return _writeStandaloneMessage(message, flush: true);
     output.writeln('$_standaloneRequestPrefix${jsonEncode(message)}');
     return output.flush();
   }
@@ -468,7 +619,8 @@ class DesktopMultiWindow {
   }
 
   /// 首帧初始化 Flutter surface 后调整隐藏窗口，并等待 resize 后的帧完成再显示。
-  static void prepareWindow() {
+  static Future<bool> prepareWindow() {
+    final prepared = Completer<bool>();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _refreshNativeChildTheme();
       if (Platform.isMacOS || Platform.isWindows) {
@@ -486,7 +638,9 @@ class DesktopMultiWindow {
         final size = _windowSize;
         final screen = _mainWindowScreen;
         final screenScale = _mainWindowScreenScale;
-        if (Platform.isWindows && screen != null && screenScale != null) {
+        if (isStandalone && size != null) {
+          await _sizeStandaloneWindow(size);
+        } else if (Platform.isWindows && screen != null && screenScale != null) {
           await _resizeAndCenterOnMainScreen(screen, screenScale, size);
         } else {
           if (size != null) {
@@ -500,7 +654,13 @@ class DesktopMultiWindow {
       } finally {
         try {
           await windowManager.show();
+          prepared.complete(true);
         } catch (error, stackTrace) {
+          prepared.complete(false);
+          if (isStandalone && hasStandalonePayload) {
+            _standalonePayload = null;
+            _writeStandaloneMessage({_payloadReady: false}).ignore();
+          }
           logger.e('Show child window failed, closing hidden window', error: error, stackTrace: stackTrace);
           try {
             await _closeCurrentWindow();
@@ -510,6 +670,23 @@ class DesktopMultiWindow {
         }
       }
     });
+    return prepared.future;
+  }
+
+  static Future<void> _sizeStandaloneWindow(Size size) async {
+    Offset? position;
+    try {
+      final (displays, cursor) = await (screenRetriever.getAllDisplays(), screenRetriever.getCursorScreenPoint()).wait;
+      final display = displays.where((display) {
+        final origin = display.visiblePosition;
+        return origin != null && (origin & display.size).contains(cursor);
+      }).firstOrNull ?? await screenRetriever.getPrimaryDisplay();
+      final workArea = (display.visiblePosition ?? Offset.zero) & (display.visibleSize ?? display.size);
+      position = centeredWindowPosition(workArea, size);
+    } catch (error, stackTrace) {
+      logger.w('Could not center the standalone window', error: error, stackTrace: stackTrace);
+    }
+    await windowManager.setBounds(null, position: position, size: size);
   }
 
   /// 同 DPI 直接设置最终尺寸；跨 DPI 先移动隐藏窗口，避免 WM_DPICHANGED 二次缩放目标尺寸。
@@ -557,7 +734,7 @@ class DesktopMultiWindow {
     }
 
     if (_standaloneProcesses[windowId] case final process?) {
-      _sendStandaloneEvent(process, method, arguments);
+      await _sendStandaloneEvent(process, method, arguments);
       return null;
     }
 
@@ -788,12 +965,42 @@ class DesktopMultiWindow {
   }
 }
 
+class _PipeOutput {
+  final IOSink _sink;
+  Future<void>? _flushing;
+
+  _PipeOutput(this._sink);
+
+  Future<void> send(String line, {bool flush = false}) async {
+    while (_flushing != null) {
+      await _flushing;
+    }
+    _sink.writeln(line);
+    if (flush) {
+      await (_flushing = _sink.flush().whenComplete(() => _flushing = null));
+    }
+  }
+
+  Future<void> close() async {
+    try {
+      await _flushing;
+    } finally {
+      await _sink.close();
+    }
+  }
+}
+
 class _StandaloneProcess {
   final Process process;
+  final String? payloadSource;
+  final Completer<bool>? payloadReady;
+  late final input = _PipeOutput(process.stdin);
+  bool _payloadFinished = false;
   final outputClosed = Completer<void>();
   bool processExited = false;
   late final Future<int> exited = process.exitCode.then((code) async {
     processExited = true;
+    completePayloadReady(false);
     await outputClosed.future;
     return code;
   });
@@ -803,7 +1010,31 @@ class _StandaloneProcess {
   bool _saved = false;
   bool _exited = false;
 
-  _StandaloneProcess(this.process);
+  _StandaloneProcess(this.process, {required bool hasPayload, this.payloadSource})
+      : payloadReady = hasPayload ? Completer<bool>() : null;
+
+  void completePayloadReady(bool accepted) {
+    final ready = payloadReady;
+    if (ready != null && !ready.isCompleted) ready.complete(accepted);
+  }
+
+  Future<bool> sendPayload(Map<String, dynamic> frame) async {
+    if (_payloadFinished || processExited) return false;
+    _payloadFinished = !frame.containsKey('chunk');
+    try {
+      await DesktopMultiWindow._sendStandaloneEvent(this, DesktopMultiWindow._payloadEvent, frame, flush: true);
+      return !processExited;
+    } catch (error, stackTrace) {
+      _payloadFinished = true;
+      logger.w('Could not deliver the window payload', error: error, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  Future<void> failPayload(String error) async {
+    completePayloadReady(false);
+    await sendPayload({'error': error});
+  }
 
   bool handleCloseMessage(Map<String, dynamic> message) {
     if (message['closeSaved'] case final bool saved) {
@@ -841,11 +1072,10 @@ class _StandaloneProcess {
         _exited = true;
       }),
     ]).timeout(timeout);
-    try {
-      DesktopMultiWindow._sendStandaloneEvent(this, event, attempt);
-    } catch (error, stackTrace) {
-      reply.completeError(error, stackTrace);
-    }
+    unawaited(DesktopMultiWindow._sendStandaloneEvent(this, event, attempt).then<void>((_) {},
+        onError: (Object error, StackTrace stackTrace) {
+      if (!reply.isCompleted) reply.completeError(error, stackTrace);
+    }));
     await result;
   }
 
@@ -857,11 +1087,10 @@ class _StandaloneProcess {
 
   void cancel(int attempt) {
     if (_attempt != attempt || _exited) return;
-    try {
-      DesktopMultiWindow._sendStandaloneEvent(this, DesktopMultiWindow._cancelClose, attempt);
-    } catch (error) {
+    unawaited(DesktopMultiWindow._sendStandaloneEvent(this, DesktopMultiWindow._cancelClose, attempt).then<void>((_) {},
+        onError: (Object error) {
       logger.w('Could not cancel tool shutdown', error: error);
-    }
+    }));
   }
 }
 

@@ -89,7 +89,11 @@ class MultiSelectController {
 
   void prune(Iterable<String> visibleIds) {
     final visibleIdSet = visibleIds.toSet();
-    selectedIds.removeWhere((requestId) => !visibleIdSet.contains(requestId));
+    pruneWhere(visibleIdSet.contains);
+  }
+
+  void pruneWhere(bool Function(String) isVisible) {
+    selectedIds.removeWhere((requestId) => !isVisible(requestId));
 
     if (selectedIds.isEmpty) {
       clear();

@@ -98,7 +98,7 @@ class SearchState extends State<Search> {
                         searchModel.protocols = {};
                         searched = searchModel.isNotEmpty;
                       });
-                      widget.onSearch?.call(searchModel);
+                      widget.onSearch?.call(searchModel.clone());
                     })),
           );
         }));
@@ -111,7 +111,7 @@ class SearchState extends State<Search> {
     }
     _keywordTimer = Timer(const Duration(milliseconds: 500), () {
       _setKeywordOptions();
-      widget.onSearch?.call(searchModel);
+      widget.onSearch?.call(searchModel.clone());
     });
   }
 
@@ -174,7 +174,7 @@ class SearchState extends State<Search> {
                               searched = searchModel.isNotEmpty;
                               keywordController.text = searchModel.keyword ?? '';
                             });
-                            widget.onSearch?.call(searchModel);
+                            widget.onSearch?.call(searchModel.clone());
                           }))));
           return Stack(children: [
             Positioned(

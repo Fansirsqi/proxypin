@@ -44,7 +44,6 @@ import 'package:proxypin/utils/crypto_body_decoder.dart';
 import 'package:proxypin/utils/css_formatter.dart';
 import 'package:proxypin/utils/html_formatter.dart';
 import 'package:proxypin/utils/js_formatter.dart';
-import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/num.dart';
 import 'package:proxypin/utils/platform.dart';
 import 'package:proxypin/utils/xml_formatter.dart';
@@ -55,6 +54,7 @@ import '../component/search/search_controller.dart';
 import '../toolbox/encoder.dart';
 import 'detail_fields.dart';
 import 'read_only_body.dart';
+import 'stream_body.dart';
 import 'video_preview.dart';
 
 /// body 选区菜单：整个文本即全部内容，复制全部用“全选”即可，故不提供“复制值”
@@ -842,32 +842,11 @@ class _BodyState extends State<_Body> {
     final message = widget.message;
 
     if (_showsStream(message, widget.decoded)) {
-      List<Widget>? list = message?.messages
-          .map((e) => Container(
-              margin: const EdgeInsets.only(top: 2, bottom: 2),
-              child: Row(
-                children: [
-                  Expanded(child: Text(e.payloadDataAsString)),
-                  const SizedBox(width: 5),
-                  SizedBox(
-                      width: 130,
-                      child: SelectionContainer.disabled(
-                          child: Text(e.time.format(), style: const TextStyle(fontSize: 12, color: Colors.grey))))
-                ],
-              )))
-          .toList();
-      return SelectionArea(
-        child: Column(
-          children: [
-            const SelectionContainer.disabled(
-                child: Row(children: [
-              Expanded(child: Text("Data")),
-              SizedBox(width: 130, child: Text("Time")),
-            ])),
-            Divider(height: 5, thickness: 1, color: Theme.of(context).dividerColor),
-            ...list ?? []
-          ],
-        ),
+      return StreamBody(
+        key: ObjectKey(message),
+        message: message!,
+        height: _previewHeight(context),
+        virtualized: Platforms.isDesktop(),
       );
     }
 

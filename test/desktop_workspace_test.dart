@@ -1,20 +1,24 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/bin/server.dart';
+import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/desktop/left_menus/navigation.dart';
+import 'package:proxypin/ui/desktop/setting/setting.dart';
+import 'package:proxypin/ui/desktop/setting/settings_session.dart';
 import 'package:proxypin/utils/system_fonts.dart';
 
 void main() {
   late AppConfiguration configuration;
-  late ProxyServer proxyServer;
-
   setUpAll(() async {
     configuration = await AppConfiguration.instance;
-    proxyServer = ProxyServer(Configuration.fromJson({'startup': false}));
+    ProxyServer(Configuration.fromJson({'startup': false}));
     await Future.wait([SystemFonts.families(), SystemFonts.monospaceFamilies()]);
   });
 
@@ -49,9 +53,10 @@ void main() {
     expect(find.text('draft'), findsOneWidget);
   });
 
-  Future<void> openWorkspace(
+  Future<void> showWindow(
     WidgetTester tester,
-    ValueNotifier<int> selection, {
+    Widget home, {
+    AppConfiguration? displayConfiguration,
     Size size = const Size(800, 600),
     double textScale = 1.0,
   }) async {
@@ -59,22 +64,30 @@ void main() {
     tester.view.physicalSize = size;
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(selection.dispose);
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('en'),
       theme: ThemeData(platform: TargetPlatform.linux),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) => AppDisplaySettings(
-        configuration: configuration,
+        configuration: displayConfiguration ?? configuration,
         child: MediaQuery(
           data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
           child: child!,
         ),
       ),
-      home: Scaffold(
+      home: home,
+    ));
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openWorkspace(WidgetTester tester, ValueNotifier<int> selection) {
+    addTearDown(selection.dispose);
+    return showWindow(
+      tester,
+      Scaffold(
         body: Row(children: [
-          LeftNavigationBar(appConfiguration: configuration, proxyServer: proxyServer, selectIndex: selection),
+          LeftNavigationBar(appConfiguration: configuration, selectIndex: selection),
           Expanded(
             child: ValueListenableBuilder<int>(
               valueListenable: selection,
@@ -83,8 +96,7 @@ void main() {
           ),
         ]),
       ),
-    ));
-    await tester.pumpAndSettle();
+    );
   }
 
   testWidgets('the sidebar keeps navigation selected when width changes', (tester) async {
@@ -127,19 +139,50 @@ void main() {
     final previousLayout = configuration.detailLayout.value;
     configuration.detailLayout.value = AppConfiguration.defaultDetailLayout;
     addTearDown(() => configuration.detailLayout.value = previousLayout);
-    await openWorkspace(tester, ValueNotifier(0), size: const Size(420, 440), textScale: 1.25);
-
-    await tester.tap(find.byTooltip('Settings'));
+    const windows = MethodChannel('mixin.one/desktop_multi_window');
+    const router = MethodChannel('mixin.one/desktop_multi_window/channels');
+    const windowManager = MethodChannel('window_manager');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(windows, (_) async => {'windowId': 'settings', 'windowArgument': ''});
+    messenger.setMockMethodCallHandler(windowManager, (_) async => null);
+    messenger.setMockMethodCallHandler(router, (call) async {
+      if (call.method == 'registerMethodHandler') return null;
+      final message = call.arguments as Map;
+      final method = message['method'] as String;
+      if (method == 'saveDesktopSettings') return true;
+      return handleDesktopSettingsMethod(method, null, 'settings');
+    });
+    addTearDown(() {
+      for (final channel in [windows, router, windowManager]) {
+        messenger.setMockMethodCallHandler(channel, null);
+      }
+    });
+    await DesktopMultiWindow.ensureInitialized(mainWindowId: 'main');
+    final directory = Directory.systemTemp.createTempSync('proxypin-workspace-');
+    addTearDown(() => directory.delete(recursive: true));
+    final settingsConfiguration = AppConfiguration.withConfigFile(File('${directory.path}/ui_config.json'));
+    final session = await DesktopSettingsSession.connect(settingsConfiguration);
+    await showWindow(tester, Setting(windowId: 'settings', session: session),
+        displayConfiguration: settingsConfiguration, size: const Size(420, 440), textScale: 1.25);
+    final labels = AppLocalizations.of(tester.element(find.byType(Setting)))!;
+    final closeAction = find.byType(DropdownButton<WindowCloseAction>);
+    expect(closeAction.hitTestable(), findsOneWidget);
+    await tester.tap(closeAction);
     await tester.pumpAndSettle();
-    final labels = AppLocalizations.of(tester.element(find.bySubtype<Dialog>()))!;
+    await tester.tap(find.text(labels.windowCloseMinimize).last);
+    await tester.pumpAndSettle();
+    expect(settingsConfiguration.windowCloseAction, WindowCloseAction.minimize);
     expect(find.text(labels.appFont), findsOneWidget);
     expect(find.text(labels.uiDensity), findsOneWidget);
     expect(find.text(labels.codeFont), findsOneWidget);
 
     Future<void> openSection(String title) async {
-      final tab = find.descendant(of: find.byType(TabBar), matching: find.text(title));
-      await tester.ensureVisible(tab);
-      await tester.pumpAndSettle();
+      final tab = find.widgetWithText(Tab, title);
+      await tester.scrollUntilVisible(tab, 140,
+          scrollable: find.descendant(
+            of: find.byType(TabBar),
+            matching: find.byType(Scrollable),
+          ));
       await tester.tap(tab);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -150,7 +193,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(labels.detailAlignRight).last);
     await tester.pumpAndSettle();
-    expect(configuration.detailLayout.value.tabs, DetailTabAlignment.right);
+    expect(settingsConfiguration.detailLayout.value.tabs, DetailTabAlignment.right);
     expect(find.text(labels.detailHeaderDensity), findsOneWidget);
 
     await openSection(labels.proxy);
@@ -162,8 +205,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(labels.installCaLocal), findsOneWidget);
     await tester.tapAt(const Offset(4, 220));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
 
     await openSection(labels.trafficControl);
