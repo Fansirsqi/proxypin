@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/app_update/desktop_update_dialog.dart';
@@ -40,7 +41,7 @@ class NewVersionDialog extends StatelessWidget {
     final theme = Theme.of(context);
     AppLocalizations localizations = AppLocalizations.of(context)!;
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(localizations.appUpdateDialogTitle),
       // scrollable: true,
       content: Container(

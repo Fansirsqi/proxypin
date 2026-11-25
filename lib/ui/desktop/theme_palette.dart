@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/component/saved_theme.dart';
 import 'package:proxypin/ui/component/theme_presets.dart';
@@ -276,7 +277,7 @@ class _SavedThemeDialogState extends State<_SavedThemeDialog> {
     final colors = _palette(_brightness);
     return PopScope(
       canPop: !_saving,
-      child: AlertDialog(
+      child: FloatingAlertDialog(
         scrollable: true,
         title: Text(widget.editing ? labels.themeEdit : labels.themeCreate),
         content: SizedBox(
@@ -501,7 +502,7 @@ class _PaletteColorDialogState extends State<_PaletteColorDialog> {
     final labels = AppLocalizations.of(context)!;
     final customColor = controller.text.trim();
     final valid = ThemeModel.parseColor(customColor) != null && !ColorMapping.colors.containsKey(customColor);
-    return AlertDialog(
+    return FloatingAlertDialog(
       scrollable: true,
       title: Text(widget.title),
       content: SizedBox(

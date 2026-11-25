@@ -17,6 +17,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/channel/host_port.dart';
@@ -54,7 +55,7 @@ class _ExternalProxyDialogState extends State<ExternalProxyDialog> {
   Widget build(BuildContext context) {
     bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
-    return AlertDialog(
+    return FloatingAlertDialog(
         scrollable: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
         title: Text(localizations.externalProxy, style: const TextStyle(fontSize: 15)),
@@ -179,7 +180,7 @@ class _ExternalProxyDialogState extends State<ExternalProxyDialog> {
         if (mounted) {
           await showDialog(
               context: context,
-              builder: (_) => AlertDialog(
+              builder: (_) => FloatingAlertDialog(
                     title: Text(localizations.externalProxyConnectFailure),
                     content: SizedBox(
                         width: 230,

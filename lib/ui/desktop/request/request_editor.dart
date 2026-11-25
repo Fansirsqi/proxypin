@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_forge/code_forge.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
@@ -364,7 +365,7 @@ class RequestEditorState extends State<RequestEditor> {
       showDialog(
         context: context,
         builder: (BuildContext context) {
-          return AlertDialog(
+          return FloatingAlertDialog(
               title: Text(localizations.prompt),
               content: Text(localizations.curlSchemeRequest),
               actions: [

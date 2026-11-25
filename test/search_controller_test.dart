@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:proxypin/ui/component/search/search_controller.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('SearchTextController', () {
     test('updateMatchCount keeps ValueNotifier state in sync with currentMatchIndex', () {
       final controller = SearchTextController();
@@ -21,4 +23,3 @@ void main() {
     });
   });
 }
-

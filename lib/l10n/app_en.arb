@@ -567,13 +567,8 @@
   "detailMediaUnavailable": "Media preview unavailable",
   "captureListDensity": "Capture row height",
   "captureListDensitySubtitle": "Adjust row height in the capture list",
-  "alwaysShowCaptureRowDetails": "Always show the second line",
-  "alwaysShowCaptureRowDetailsSubtitle": "Show status, time and duration even below {threshold}%",
-  "@alwaysShowCaptureRowDetailsSubtitle": {
-    "placeholders": {
-      "threshold": { "type": "int" }
-    }
-  },
+  "showCaptureRowDetails": "Show extra request details",
+  "showCaptureRowDetailsSubtitle": "Show status, time and duration in the capture list",
   "densityComfortable": "Comfortable",
   "densityCompact": "Compact",
   "densityDense": "Dense",

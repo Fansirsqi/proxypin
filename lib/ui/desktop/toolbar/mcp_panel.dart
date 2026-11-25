@@ -21,6 +21,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/mcp/mcp_names.dart';
 import 'package:proxypin/mcp/mcp_service.dart';
@@ -441,7 +442,7 @@ class _McpServiceDialogState extends State<McpServiceDialog> {
     var theme = Theme.of(context);
     var cs = theme.colorScheme;
 
-    return Dialog(
+    return FloatingDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       backgroundColor: cs.surface,
       insetPadding: const EdgeInsets.all(24),

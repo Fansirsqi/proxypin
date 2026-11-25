@@ -17,6 +17,7 @@
 import 'dart:collection';
 
 import 'package:date_format/date_format.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
@@ -209,7 +210,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
             requestEdit(request);
           });
         }),
-        popupItem(localizations.requestRewrite, onTap: () => showRequestRewriteDialog(context, request)),
+        popupItem(localizations.requestRewrite, onTap: () => openCapturedRewrite(context, request)),
         const PopupMenuDivider(height: 0.3),
         popupItem(localizations.rename, onTap: () => rename(widget.favorite)),
         popupItem(localizations.deleteFavorite, onTap: () {
@@ -259,7 +260,7 @@ class _FavoriteItemState extends State<_FavoriteItem> {
     showDialog(
         context: context,
         builder: (context) {
-          return AlertDialog(
+          return FloatingAlertDialog(
             content: TextFormField(
               initialValue: name,
               decoration: InputDecoration(label: Text(localizations.name)),

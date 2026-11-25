@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -47,7 +48,7 @@ class _PhoneConnectState extends State<PhoneConnect> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FloatingAlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
         title: Row(children: [
           Text(localizations.mobileConnect, style: const TextStyle(fontSize: 18)),

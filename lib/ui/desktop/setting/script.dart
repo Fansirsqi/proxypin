@@ -17,6 +17,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
@@ -448,7 +449,7 @@ class _ScriptEditState extends State<ScriptEdit> {
     GlobalKey formKey = GlobalKey<FormState>();
     bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       scrollable: true,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
       titlePadding: const EdgeInsets.only(left: 15, top: 6, right: 15),

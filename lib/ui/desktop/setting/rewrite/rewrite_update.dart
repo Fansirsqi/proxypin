@@ -18,6 +18,7 @@ import 'package:code_forge/code_forge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:get/get.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
@@ -178,7 +179,7 @@ class _RewriteUpdateAddState extends State<RewriteUpdateAddDialog> {
 
     var typeList = widget.ruleType == RuleType.requestUpdate ? RewriteType.updateRequest : RewriteType.updateResponse;
 
-    return AlertDialog(
+    return FloatingAlertDialog(
         scrollable: true,
         titlePadding: const EdgeInsets.only(top: 10, left: 20),
         actionsPadding: const EdgeInsets.only(right: 15, bottom: 15),

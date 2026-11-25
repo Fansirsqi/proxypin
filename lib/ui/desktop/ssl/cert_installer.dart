@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:proxypin/network/util/cert/cert_data.dart';
 import 'package:proxypin/network/util/cert/x509.dart';
 import 'package:proxypin/network/util/crypto.dart';
@@ -87,12 +89,22 @@ trap - EXIT HUP INT TERM
 
   static ({String anchors, String bundle, List<String> refresh, String uninstallRefreshArgument})? _linuxTrustStore() {
     const fedoraAnchors = '/etc/pki/ca-trust/source/anchors';
-    const fedoraRefresh = '/usr/bin/update-ca-trust';
-    if (Directory(fedoraAnchors).existsSync() && File(fedoraRefresh).existsSync()) {
+    const updateCaTrust = '/usr/bin/update-ca-trust';
+    if (Directory(fedoraAnchors).existsSync() && File(updateCaTrust).existsSync()) {
       return (
         anchors: fedoraAnchors,
         bundle: '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem',
-        refresh: [fedoraRefresh, 'extract'],
+        refresh: [updateCaTrust, 'extract'],
+        uninstallRefreshArgument: 'extract',
+      );
+    }
+
+    const archAnchors = '/etc/ca-certificates/trust-source/anchors';
+    if (Directory(archAnchors).existsSync() && File(updateCaTrust).existsSync()) {
+      return (
+        anchors: archAnchors,
+        bundle: '/etc/ca-certificates/extracted/tls-ca-bundle.pem',
+        refresh: [updateCaTrust, 'extract'],
         uninstallRefreshArgument: 'extract',
       );
     }
@@ -160,44 +172,68 @@ trap - EXIT HUP INT TERM
   }
 
   static Future<CertificateUninstallResult> uninstallLinuxCertificate(File certFile) async {
-    try {
-      final store = _linuxTrustStore();
-      if (!Platform.isLinux || store == null) return CertificateUninstallResult.failed;
+    if (!Platform.isLinux) return CertificateUninstallResult.failed;
+    final store = _linuxTrustStore();
+    if (store == null) return CertificateUninstallResult.failed;
+    return uninstallLinuxCertificateFromStore(
+      certFile,
+      anchors: Directory(store.anchors),
+      bundle: File(store.bundle),
+      refresh: [store.refresh.first, store.uninstallRefreshArgument],
+      runProcess: Process.run,
+    );
+  }
 
+  @visibleForTesting
+  static Future<CertificateUninstallResult> uninstallLinuxCertificateFromStore(
+    File certFile, {
+    required Directory anchors,
+    required File bundle,
+    required List<String> refresh,
+    required Future<ProcessResult> Function(String, List<String>) runProcess,
+  }) async {
+    try {
       final certificate = await certFile.readAsString();
       final pemBody = _singlePemBody(certificate);
       if (pemBody == null) return CertificateUninstallResult.failed;
-      if (!await _linuxBundleContains(store.bundle, certificate)) return CertificateUninstallResult.removed;
+      if (!await _linuxBundleContains(bundle.path, certificate)) return CertificateUninstallResult.removed;
 
       final fingerprint = CryptoUtils.getHash(base64Decode(pemBody));
-      final anchors = <String>[];
-      await for (final entry in Directory(store.anchors).list(recursive: true, followLinks: false)) {
+      final matchingAnchors = <String>[];
+      final entries = anchors.list(recursive: true, followLinks: false).handleError(
+            (Object error) => logger.w('Skipping unreadable Linux CA directory entry', error: error),
+            test: (error) => error is FileSystemException,
+          );
+      await for (final entry in entries) {
         if (entry is! File) continue;
-        final bytes = await entry.readAsBytes();
-        final checksum = CryptoUtils.getHash(bytes);
-        if (checksum == fingerprint || _singlePemBody(utf8.decode(bytes, allowMalformed: true)) == pemBody) {
-          anchors.add('${checksum.toLowerCase()}:${entry.path}');
+        try {
+          final bytes = await entry.readAsBytes();
+          final checksum = CryptoUtils.getHash(bytes);
+          if (checksum == fingerprint || _singlePemBody(utf8.decode(bytes, allowMalformed: true)) == pemBody) {
+            matchingAnchors.add('${checksum.toLowerCase()}:${entry.path}');
+          }
+        } on FileSystemException catch (error) {
+          logger.w('Skipping unreadable Linux CA anchor ${entry.path}', error: error);
         }
       }
-      if (anchors.isEmpty) return CertificateUninstallResult.failed;
+      if (matchingAnchors.isEmpty) return CertificateUninstallResult.failed;
 
-      final result = await Process.run('/usr/bin/pkexec', [
+      final result = await runProcess('/usr/bin/pkexec', [
         '--disable-internal-agent',
         '/bin/sh',
         '-c',
         _uninstallLinuxAnchors,
         'proxypin-uninstall-ca',
-        store.anchors,
-        store.refresh.first,
-        store.uninstallRefreshArgument,
-        ...anchors,
+        anchors.path,
+        ...refresh,
+        ...matchingAnchors,
       ]);
       if (result.exitCode == 126) return CertificateUninstallResult.cancelled;
       if (result.exitCode != 0) {
         logger.w('Linux CA uninstall exited ${result.exitCode}: ${result.stderr}');
         return CertificateUninstallResult.failed;
       }
-      return await _linuxBundleContains(store.bundle, certificate)
+      return await _linuxBundleContains(bundle.path, certificate)
           ? CertificateUninstallResult.failed
           : CertificateUninstallResult.removed;
     } catch (error) {

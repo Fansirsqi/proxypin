@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:get/get_rx/src/rx_types/rx_types.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/component/search/search_field.dart';
 
@@ -12,8 +11,9 @@ class SearchTextController extends ValueNotifier<SearchSettings> with WidgetsBin
   }
 
   final patternController = TextEditingController();
-  RxInt currentMatchIndex = RxInt(0);
-  RxInt totalMatchCount = RxInt(0);
+  final currentMatchIndex = ValueNotifier(0);
+  final totalMatchCount = ValueNotifier(0);
+  final searchFailed = ValueNotifier(false);
 
   OverlayEntry? _searchPopup;
   double? overlayTop;
@@ -26,19 +26,28 @@ class SearchTextController extends ValueNotifier<SearchSettings> with WidgetsBin
   }
 
   void toggleCaseSensitivity() {
-    value = value.copyWith(isCaseSensitive: !value.isCaseSensitive);
+    _changeQuery(value.copyWith(isCaseSensitive: !value.isCaseSensitive));
   }
 
   void toggleIsRegExp() {
-    value = value.copyWith(isRegExp: !value.isRegExp);
+    _changeQuery(value.copyWith(isRegExp: !value.isRegExp));
   }
 
   void _onPatternControllerChanged() {
-    value = value.copyWith(pattern: patternController.text, currentMatchIndex: 0);
-    if (value.pattern.isEmpty) {
-      currentMatchIndex.value = 0;
-      totalMatchCount.value = 0;
+    if (value.pattern != patternController.text) {
+      _changeQuery(value.copyWith(pattern: patternController.text));
     }
+  }
+
+  void _changeQuery(SearchSettings settings) {
+    _resetMatches();
+    value = settings.copyWith(currentMatchIndex: 0);
+  }
+
+  void _resetMatches() {
+    currentMatchIndex.value = 0;
+    totalMatchCount.value = 0;
+    searchFailed.value = false;
   }
 
   void updateMatchCount(int count) {
@@ -117,10 +126,12 @@ class SearchTextController extends ValueNotifier<SearchSettings> with WidgetsBin
   void dispose() {
     WidgetsBinding.instance.removeObserver(this); // 移除监听器
     logger.d('Disposing SearchTextController');
-    removeSearchOverlay();
+    _searchPopup?.remove();
+    _searchPopup = null;
     patternController.dispose();
-    totalMatchCount.close();
-    currentMatchIndex.close();
+    totalMatchCount.dispose();
+    currentMatchIndex.dispose();
+    searchFailed.dispose();
     super.dispose();
   }
 
@@ -136,11 +147,20 @@ class SearchTextController extends ValueNotifier<SearchSettings> with WidgetsBin
     }
     _searchPopup = _buildSearchOverlay(context, top: top, right: right);
     Overlay.of(context).insert(_searchPopup!);
+    notifyListeners();
   }
 
   void removeSearchOverlay() {
-    _searchPopup?.remove();
+    final popup = _searchPopup;
+    if (popup == null) return;
+    popup.remove();
     _searchPopup = null;
+    _resetMatches();
+    if (value.currentMatchIndex == 0) {
+      notifyListeners();
+    } else {
+      value = value.copyWith(currentMatchIndex: 0);
+    }
   }
 
   OverlayEntry _buildSearchOverlay(BuildContext context, {double? top, double? right}) {

@@ -16,11 +16,9 @@
 
 import 'dart:collection';
 import 'dart:io';
-import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/context_menu.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -54,7 +52,6 @@ class DomainList extends StatefulWidget {
   final NetworkTabController panel;
 
   final ListenableList<HttpRequest> list;
-  final bool shrinkWrap;
   final Function(List<HttpRequest>)? onRemove;
   final MultiSelectController selectionController;
   final RequestSelectionHandlers selectionHandlers;
@@ -63,7 +60,6 @@ class DomainList extends StatefulWidget {
       {super.key,
       required this.proxyServer,
       required this.list,
-      this.shrinkWrap = true,
       required this.panel,
       this.onRemove,
       required this.selectionController,
@@ -99,6 +95,7 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
     if (!changing) {
       changing = true;
       Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
         setState(() {
           changing = false;
         });
@@ -156,9 +153,39 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
       searchView.clear();
     }
 
-    return widget.shrinkWrap
-        ? SingleChildScrollView(child: Column(children: list))
-        : ListView.builder(itemCount: list.length, itemBuilder: (_, index) => list[index]);
+    var count = 0;
+    final sections = <({DomainRequests domain, int start, List<RequestWidget> rows})>[];
+    for (final domain in list) {
+      final rows = domain.currentSelected ? domain.visibleRows : const <RequestWidget>[];
+      sections.add((domain: domain, start: count, rows: rows));
+      count += 1 + rows.length;
+    }
+    final headers = {for (final section in sections) section.domain.key!: section.start};
+    Map<Key, int>? rowIndices;
+    return ListView.builder(
+      itemCount: count,
+      findChildIndexCallback: (key) =>
+          headers[key] ??
+          (rowIndices ??= {
+            for (final section in sections)
+              for (final (rowIndex, row) in section.rows.indexed) row.key!: section.start + rowIndex + 1,
+          })[key],
+      itemBuilder: (_, index) {
+        var lower = 0;
+        var upper = sections.length;
+        while (lower + 1 < upper) {
+          final middle = (lower + upper) ~/ 2;
+          if (sections[middle].start <= index) {
+            lower = middle;
+          } else {
+            upper = middle;
+          }
+        }
+        final section = sections[lower];
+        final offset = index - section.start;
+        return offset == 0 ? section.domain : section.rows[offset - 1];
+      },
+    );
   }
 
   ///搜索
@@ -175,7 +202,7 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
     containerMap.forEach((key, domainRequests) {
       var body = domainRequests.search(searchModel);
       if (body.isNotEmpty) {
-        result[key] = domainRequests.copy(body: body, selected: searchView[key]?.currentSelected);
+        result[key] = domainRequests.copy(body: body);
       }
     });
 
@@ -205,7 +232,7 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
     domainRequests.addRequest(request.requestId, request, sortDesc);
     //搜索视图
     if (searchModel?.isNotEmpty == true && searchModel?.filter(request, null) == true) {
-      searchView[host]?.addRequest(request.requestId, request, sortDesc);
+      changeState();
     }
 
     if (isNew) {
@@ -219,12 +246,14 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
     var host = request.remoteDomain()!;
     DomainRequests? domainRequests = containerMap[host];
     if (domainRequests == null) {
-      domainRequests = DomainRequests(
+      domainRequests = DomainRequests._(
         host,
         proxyServer: widget.proxyServer,
         trailing: appIcon(request),
         onDelete: deleteHost,
         onExportHar: exportDomainHar,
+        onExpansionChanged: () => setState(() {}),
+        onRowsChanged: changeState,
         onRequestRemove: (req) {
           widget.onRemove?.call([req]);
           changeState();
@@ -272,12 +301,9 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
     }
 
     //搜索视图
-    if (searchModel?.isNotEmpty == true && searchModel?.filter(pathRow.request, response) == true) {
-      var requests = searchView[domain];
-      if (requests?.getRequest(response) == null) {
-        requests?.addRequest(response.requestId, pathRow.request, sortDesc);
-      }
-      requests?.getRequest(response)?.setResponse(response);
+    if (searchModel case final model? when model.isNotEmpty) {
+      final wasVisible = searchView[domain]?.getRequest(response) != null;
+      if (wasVisible != model.filter(pathRow.request, response)) changeState();
     }
   }
 
@@ -346,11 +372,9 @@ class DomainWidgetState extends State<DomainList> with AutomaticKeepAliveClientM
   void sort(bool desc) {
     sortDesc = desc;
     containerMap.forEach((key, request) {
-      var reversed = request.body.toList().reversed;
-      request.body.clear();
-      request.body.addAll(reversed);
-      request.changeState();
+      request.reverseRows();
     });
+    setState(() {});
   }
 
   List<HttpRequest> selectedRequests() {
@@ -395,10 +419,13 @@ class DomainRequests extends StatefulWidget {
   final Widget? trailing;
 
   //请求列表
-  final Queue<RequestWidget> body = Queue();
+  final _rows = _DomainRows();
+  Queue<RequestWidget> get body => _rows.body;
+  List<RequestWidget> get visibleRows => _rows.snapshot ??= body.toList(growable: false);
 
-  //是否选中
-  final bool selected;
+  final _DomainExpansion _expansion;
+  final VoidCallback onExpansionChanged;
+  final VoidCallback onRowsChanged;
 
   //移除回调
   final Function(String host)? onDelete;
@@ -407,9 +434,11 @@ class DomainRequests extends StatefulWidget {
   final RequestSelectionHandlers selectionHandlers;
   final MultiSelectController selectionController;
 
-  DomainRequests(this.domain,
+  DomainRequests._(this.domain,
       {GlobalKey? key,
-      this.selected = false,
+      _DomainExpansion? expansion,
+      required this.onExpansionChanged,
+      required this.onRowsChanged,
       this.onDelete,
       this.onExportHar,
       required this.proxyServer,
@@ -417,7 +446,8 @@ class DomainRequests extends StatefulWidget {
       required this.selectionHandlers,
       this.trailing,
       required this.selectionController})
-      : super(key: key ?? GlobalKey<_DomainRequestsState>());
+      : _expansion = expansion ?? _DomainExpansion(),
+        super(key: key ?? GlobalKey<_DomainRequestsState>());
 
   ///添加请求
   void addRequest(String? requestId, HttpRequest request, bool sortDesc) {
@@ -432,6 +462,7 @@ class DomainRequests extends StatefulWidget {
         selectionHandlers: selectionHandlers,
         remove: (it) => _remove(it));
     sortDesc ? body.addFirst(requestWidget) : body.addLast(requestWidget);
+    _rowsChanged();
 
     if (requestId == null) {
       return;
@@ -452,9 +483,25 @@ class DomainRequests extends StatefulWidget {
 
   void _remove(RequestWidget requestWidget) {
     if (body.remove(requestWidget)) {
+      requestMap.remove(requestWidget.request.requestId);
+      _rowsChanged();
       onRequestRemove?.call(requestWidget.request);
       changeState();
     }
+  }
+
+  void reverseRows() {
+    final reversed = body.toList().reversed;
+    body
+      ..clear()
+      ..addAll(reversed);
+    _rowsChanged();
+    changeState();
+  }
+
+  void _rowsChanged() {
+    _rows.snapshot = null;
+    if (currentSelected) onRowsChanged();
   }
 
   void _removeRequest(HttpRequest request) {
@@ -471,12 +518,14 @@ class DomainRequests extends StatefulWidget {
   }
 
   ///复制
-  DomainRequests copy({Iterable<RequestWidget>? body, bool? selected}) {
+  DomainRequests copy({Iterable<RequestWidget>? body}) {
     var state = key as GlobalKey<_DomainRequestsState>;
-    var headerBody = DomainRequests(domain,
+    var headerBody = DomainRequests._(domain,
         key: state,
         trailing: trailing,
-        selected: selected ?? state.currentState?.selected == true,
+        expansion: _expansion,
+        onExpansionChanged: onExpansionChanged,
+        onRowsChanged: onRowsChanged,
         onDelete: onDelete,
         onExportHar: onExportHar,
         onRequestRemove: onRequestRemove,
@@ -485,13 +534,18 @@ class DomainRequests extends StatefulWidget {
         proxyServer: proxyServer);
     if (body != null) {
       headerBody.body.addAll(body);
+      for (final row in headerBody.body) {
+        headerBody.requestMap[row.request.requestId] = row;
+      }
     }
     return headerBody;
   }
 
-  bool get currentSelected {
-    var state = key as GlobalKey<_DomainRequestsState>;
-    return state.currentState?.selected == true;
+  bool get currentSelected => _expansion.expanded;
+
+  void toggleExpanded() {
+    _expansion.expanded = !currentSelected;
+    onExpansionChanged();
   }
 
   void changeState() {
@@ -505,10 +559,18 @@ class DomainRequests extends StatefulWidget {
   }
 }
 
+class _DomainExpansion {
+  bool expanded = false;
+}
+
+class _DomainRows {
+  final Queue<RequestWidget> body = Queue();
+  List<RequestWidget>? snapshot;
+}
+
 class _DomainRequestsState extends State<DomainRequests> {
   final GlobalKey<ColorTransitionState> transitionState = GlobalKey<ColorTransitionState>();
   late Configuration configuration;
-  late bool selected;
   Widget? trailing;
   bool changing = false;
 
@@ -518,7 +580,6 @@ class _DomainRequestsState extends State<DomainRequests> {
   void initState() {
     super.initState();
     configuration = widget.proxyServer.configuration;
-    selected = widget.selected;
     trailing = widget.trailing;
   }
 
@@ -539,43 +600,39 @@ class _DomainRequestsState extends State<DomainRequests> {
 
   @override
   Widget build(BuildContext context) {
-    // 收起时不构建子行（Offstage 只是不绘制，仍会构建整棵子树——域名下几千个请求会全部常驻）
-    return Column(children: [_hostWidget(widget.domain), if (selected) Column(children: widget.body.toList())]);
+    return _hostWidget(widget.domain);
   }
 
   //domain title（结构沿用旧版：Material 箭头 + 域名 + 右侧 app 图标；无底色无分割线。
   //Material+InkWell：hover/水波纹由组件自身处理，不再 setState 重建子树）
   Widget _hostWidget(String title) {
     final theme = Theme.of(context);
-    final density = AppDisplaySettings.of(context)?.captureDensityFactor ?? 1;
-    final height = lerpDouble(24, 40, density)!;
-    final arrowWidth = lerpDouble(18, 25, density)!;
-    final arrowSize = lerpDouble(14, 18, density)!;
-    final appIconSize = lerpDouble(14, 23, density)!;
+    final display = AppDisplaySettings.captureOf(context);
+    final scale = display?.captureRowScale ?? 1;
+    final contentScale = scale.clamp(0.0, 1.0);
+    final height = 40 * scale;
+    final arrowSize = 18 * contentScale;
+    final appIconSize = 23 * contentScale;
     var host = Material(
         color: Colors.transparent,
         child: InkWell(
             onSecondaryTapDown: (details) => menu(details),
-            onTap: () {
-              setState(() {
-                selected = !selected;
-              });
-            },
+            onTap: () => setState(widget.toggleExpanded),
             hoverColor: rowHoverColor(theme),
             child: Container(
                 constraints: BoxConstraints(minHeight: height),
-                padding: const EdgeInsets.fromLTRB(6, 2, 10, 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Row(children: [
                   SizedBox(
-                      width: arrowWidth,
-                      child: Icon(selected ? Icons.arrow_drop_down : Icons.arrow_right,
+                      width: 25,
+                      child: Icon(widget.currentSelected ? Icons.arrow_drop_down : Icons.arrow_right,
                           size: arrowSize, color: theme.colorScheme.onSurfaceVariant)),
                   Expanded(
                       child: Text(title,
                           textAlign: TextAlign.left,
-                          style: codeTextStyle(context,
-                              base: const TextStyle(fontWeight: FontWeight.normal, height: 1.2),
-                              size: 13,
+                          style: TextStyle(
+                              fontSize: display?.captureRowMetrics.titleSize ?? 13,
+                              height: 1.25,
                               color: theme.colorScheme.onSurface),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis)),
@@ -660,8 +717,6 @@ class _DomainRequestsState extends State<DomainRequests> {
 
   void _delete() {
     widget.onDelete?.call(widget.domain);
-    widget.requestMap.clear();
-    widget.body.clear();
     FlutterToastr.show(localizations.deleteSuccess, context);
   }
 }

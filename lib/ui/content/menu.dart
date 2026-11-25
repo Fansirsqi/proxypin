@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -171,7 +172,7 @@ class DetailMenuWidget extends StatelessWidget {
                       showDialog(
                           context: context,
                           builder: (dialogContext) {
-                            return AlertDialog(
+                            return FloatingAlertDialog(
                               title: Text(localizations.copy),
                               content: SingleChildScrollView(
                                 child: Column(
@@ -232,7 +233,7 @@ class DetailMenuWidget extends StatelessWidget {
                     showDialog(
                         context: context,
                         builder: (menuContext) {
-                          return AlertDialog(
+                          return FloatingAlertDialog(
                               title: Text(localizations.save),
                               content: SingleChildScrollView(
                                 child: Column(

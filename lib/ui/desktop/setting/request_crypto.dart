@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
@@ -488,7 +489,7 @@ class _CryptoRuleDialogState extends State<CryptoRuleDialog> {
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(widget.rule == null ? l10n.newBuilt : l10n.edit),
       scrollable: true,
       titlePadding: const EdgeInsets.only(top: 10, left: 20),

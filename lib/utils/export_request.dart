@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/util/logger.dart';
@@ -296,7 +297,7 @@ void showExportDialog(
   showDialog(
     context: ctx,
     builder: (BuildContext context) {
-      return AlertDialog(
+      return FloatingAlertDialog(
         title: Text(localizations.export),
         content: Column(
           mainAxisSize: MainAxisSize.min,

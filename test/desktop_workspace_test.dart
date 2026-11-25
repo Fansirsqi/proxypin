@@ -62,6 +62,7 @@ void main() {
     addTearDown(selection.dispose);
     await tester.pumpWidget(MaterialApp(
       locale: const Locale('en'),
+      theme: ThemeData(platform: TargetPlatform.linux),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) => AppDisplaySettings(
@@ -130,7 +131,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Settings'));
     await tester.pumpAndSettle();
-    final labels = AppLocalizations.of(tester.element(find.byType(Dialog)))!;
+    final labels = AppLocalizations.of(tester.element(find.bySubtype<Dialog>()))!;
     expect(find.text(labels.appFont), findsOneWidget);
     expect(find.text(labels.uiDensity), findsOneWidget);
     expect(find.text(labels.codeFont), findsOneWidget);

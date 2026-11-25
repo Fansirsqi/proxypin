@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:proxypin/mcp/mcp_listen_options.dart';
@@ -222,26 +223,36 @@ enum DetailTabLabelAlignment { top, center, bottom }
 
 enum HeaderDensity { comfortable, compact, dense }
 
-enum DisplayDensitySetting { interface, captureList }
+enum DisplayDensitySetting {
+  fontSize,
+  interface,
+  captureList;
 
-class _DisplayDensity {
+  double get minimum => this == fontSize ? 60 : AppConfiguration.minimumDisplayDensity;
+}
+
+class _DisplayDensity extends ValueNotifier<double> {
   static const double legacyDense = 60;
 
+  final DisplayDensitySetting setting;
   double committed = AppConfiguration.defaultDisplayDensity;
-  double? preview;
+  _DisplayDensity(this.setting) : super(AppConfiguration.defaultDisplayDensity);
 
-  double get value => preview ?? committed;
+  @override
+  set value(double density) => restore(density);
 
-  set value(double density) {
-    committed = fromConfig(density);
-    preview = null;
+  void restore(Object? density) {
+    committed = normalize(density);
+    super.value = committed;
   }
 
-  static double fromConfig(Object? value) => switch (value) {
+  set preview(double density) => super.value = density;
+
+  double normalize(Object? value) => switch (value) {
         'compact' => 80,
         'dense' => legacyDense,
         final num percent when percent.isFinite =>
-          percent.clamp(AppConfiguration.minimumDisplayDensity, AppConfiguration.maximumDisplayDensity).toDouble(),
+          percent.clamp(setting.minimum, AppConfiguration.maximumDisplayDensity).toDouble(),
         _ => AppConfiguration.defaultDisplayDensity,
       };
 }
@@ -374,14 +385,17 @@ class AppConfiguration {
   bool clearConfirm = false;
 
   /// 抓包列表行密度百分比
-  final _captureDensity = _DisplayDensity();
+  final _captureDensity = _DisplayDensity(DisplayDensitySetting.captureList);
+  final _showCaptureRowDetails = ValueNotifier(true);
+  late final Listenable captureDisplayChange =
+      Listenable.merge([_captureDensity, _showCaptureRowDetails, _appFontSize]);
+  late final Listenable _mobileDisplayChanges =
+      Listenable.merge([globalChange, _captureDensity, _showCaptureRowDetails]);
   double get captureListDensity => _captureDensity.value;
   set captureListDensity(double value) => _captureDensity.value = value;
 
-  static const int captureRowDetailsThreshold = 40;
-  bool alwaysShowCaptureRowDetails = false;
-  bool get compactCaptureRows => captureListDensity < captureRowDetailsThreshold;
-  bool get showCaptureRowDetails => alwaysShowCaptureRowDetails || !compactCaptureRows;
+  bool get showCaptureRowDetails => _showCaptureRowDetails.value;
+  set showCaptureRowDetails(bool value) => _showCaptureRowDetails.value = value;
 
   /// 代码窗口字体族（请求体/响应体/脚本编辑器等），null 或空表示跟随界面字体
   String? editorFontFamily;
@@ -394,11 +408,15 @@ class AppConfiguration {
   /// 整体界面字体（不含代码窗口），null/空表示跟随系统默认字体
   String? appFontFamily;
 
-  /// 整体界面字号缩放（0.85 - 1.25，1.0 = 原样）
-  double appFontScale = 1.0;
+  final _appFontSize = _DisplayDensity(DisplayDensitySetting.fontSize);
+  ValueListenable<double> get appFontSizeChange => _appFontSize;
+  double get appFontScale => _appFontSize.value / 100;
+  set appFontScale(double value) => _appFontSize.value = value * 100;
 
   /// 整体界面密度百分比
-  final _interfaceDensity = _DisplayDensity();
+  final _interfaceDensity = _DisplayDensity(DisplayDensitySetting.interface);
+  ValueListenable<double> get uiDensityChange => _interfaceDensity;
+  late final Listenable interfaceDisplayChange = Listenable.merge([_appFontSize, _interfaceDensity]);
   double get uiDensity => _interfaceDensity.value;
   set uiDensity(double value) => _interfaceDensity.value = value;
 
@@ -442,68 +460,83 @@ class AppConfiguration {
 
   final ValueNotifier<List<String>> toolbarPins = ValueNotifier(defaultToolbarPins);
 
-  static const double minimumDisplayDensity = 25;
+  static const double minimumDisplayDensity = 5;
   static const double defaultDisplayDensity = 100;
-  static const double maximumDisplayDensity = 300;
+  static const double maximumDisplayDensity = 120;
 
   void setDisplayDensity(DisplayDensitySetting setting, double value, {required bool commit}) {
-    value = _DisplayDensity.fromConfig(value);
-    final density = switch (setting) {
-      DisplayDensitySetting.interface => _interfaceDensity,
-      DisplayDensitySetting.captureList => _captureDensity,
-    };
-    final previous = density.value;
+    final density = _densityFor(setting);
+    value = density.normalize(value);
     final needsWrite = commit && value != density.committed;
     if (commit) {
       density.value = value;
     } else {
       density.preview = value;
+      _previewSettingsDensity?.call(setting, value);
     }
-    if (density.value != previous) globalChange.value = !globalChange.value;
     if (needsWrite) flushConfig();
   }
 
-  /// 抓包列表行的尺寸参数：由 [captureListDensity] 推导
-  double get captureDensityFactor => _densityFactor(captureListDensity, minimum: -0.25, maximum: 6);
+  _DisplayDensity _densityFor(DisplayDensitySetting setting) => switch (setting) {
+        DisplayDensitySetting.fontSize => _appFontSize,
+        DisplayDensitySetting.interface => _interfaceDensity,
+        DisplayDensitySetting.captureList => _captureDensity,
+      };
 
-  static double _densityFactor(double percent, {required double minimum, required double maximum}) {
+  void previewSettingsDensity(DisplayDensitySetting setting, double value) {
+    final density = _densityFor(setting);
+    density.preview = density.normalize(value);
+  }
+
+  void clearSettingsDensityPreviews() {
+    for (final setting in DisplayDensitySetting.values) {
+      final density = _densityFor(setting);
+      density.value = density.committed;
+    }
+  }
+
+  void setShowCaptureRowDetails(bool value) {
+    if (showCaptureRowDetails == value) return;
+    showCaptureRowDetails = value;
+    flushConfig();
+  }
+
+  double get captureRowScale => captureListDensity / 100;
+
+  VisualDensity get visualDensity {
+    final percent = uiDensity;
     const dense = _DisplayDensity.legacyDense;
     if (percent < dense) {
       final progress = (percent - minimumDisplayDensity) / (dense - minimumDisplayDensity);
-      return lerpDouble(minimum, 0, progress)!;
+      final spacing = lerpDouble(-4, -2, progress)!;
+      return VisualDensity(horizontal: spacing, vertical: spacing);
     }
-    if (percent <= defaultDisplayDensity) {
-      return (percent - dense) / (defaultDisplayDensity - dense);
-    }
-    final progress = (percent - defaultDisplayDensity) / (maximumDisplayDensity - defaultDisplayDensity);
-    return lerpDouble(1, maximum, progress)!;
+    final spacing = percent <= defaultDisplayDensity
+        ? lerpDouble(-2, 0, (percent - dense) / (defaultDisplayDensity - dense))!
+        : 4 * (percent - defaultDisplayDensity) / (maximumDisplayDensity - defaultDisplayDensity);
+    return VisualDensity(horizontal: spacing, vertical: spacing);
   }
 
   CaptureRowMetrics get captureRowMetrics {
-    final factor = captureDensityFactor;
-    double size(double min, double max) => lerpDouble(min, max, factor)!;
+    final scale = captureRowScale;
+    final contentScale = scale.clamp(0.0, 1.0);
+    final textScale = contentScale * appFontScale;
+    final padding = 7 * contentScale + (scale - contentScale) * (showCaptureRowDetails ? 22 : 15);
     return CaptureRowMetrics(
-      leftWithDomain: size(8, 12),
-      leftIndent: size(18, 26),
-      leftSelection: size(3, 6),
-      right: size(6, 10),
-      top: size(1.5, 7),
-      bottom: size(1.5, 7),
-      titleSize: size(12, 13),
-      metaSize: size(10, 11),
-      gap: size(0, 3).clamp(0.0, double.infinity),
-      iconGap: size(6, 10),
-      iconWidth: size(14, 18),
-      iconSize: size(12, 16),
-      imageSize: size(14, 19),
+      leftWithDomain: 12,
+      leftIndent: 26,
+      leftSelection: 6,
+      right: 10,
+      top: padding,
+      bottom: padding,
+      titleSize: 13 * textScale,
+      metaSize: 11 * textScale,
+      gap: 3 * contentScale,
+      iconGap: 10,
+      iconWidth: 18 * contentScale,
+      iconSize: 16 * contentScale,
+      imageSize: 19 * contentScale,
     );
-  }
-
-  /// 整体界面密度 → Flutter 的 VisualDensity
-  VisualDensity get visualDensity {
-    final factor = _densityFactor(uiDensity, minimum: -1, maximum: 3);
-    final spacing = lerpDouble(-2, 0, factor)!;
-    return VisualDensity(horizontal: spacing, vertical: spacing);
   }
 
   /// 修改显示类配置后立即重建界面并落盘
@@ -666,6 +699,18 @@ class AppConfiguration {
         if (_theme.saved case final saved?) 'activeSavedTheme': saved.encoded,
       };
 
+  Object get materialThemeSettings => (
+        useMaterial3,
+        useAmoled,
+        themePreset,
+        paletteStyle,
+        _theme.primary,
+        _theme.secondary,
+        _theme.tertiary,
+        _theme.surface,
+        appFontFamily,
+      );
+
   void applyThemeSettings(Map<dynamic, dynamic> settings) {
     final theme = ThemeModel.fromJson(settings);
     if (settings['activeSavedTheme'] case final String encoded) {
@@ -746,8 +791,11 @@ class AppConfiguration {
       autoReadEnabled = config['autoReadEnabled'] ?? true;
       clearConfirm = config['clearConfirm'] ?? false;
 
-      captureListDensity = _DisplayDensity.fromConfig(config['captureListDensity']);
-      alwaysShowCaptureRowDetails = config['alwaysShowCaptureRowDetails'] == true;
+      _captureDensity.restore(config['captureListDensity']);
+      showCaptureRowDetails = switch (config['showCaptureRowDetails']) {
+        final bool value => value,
+        _ => config['alwaysShowCaptureRowDetails'] == true || captureListDensity >= 40,
+      };
 
       var fontFamily = config['editorFontFamily'];
       editorFontFamily = fontFamily is String && fontFamily.trim().isNotEmpty ? fontFamily.trim() : null;
@@ -758,8 +806,8 @@ class AppConfiguration {
       var appFont = config['appFontFamily'];
       appFontFamily = appFont is String && appFont.trim().isNotEmpty ? appFont.trim() : null;
       var appScale = config['appFontScale'];
-      appFontScale = appScale is num && appScale >= 0.85 && appScale <= 1.25 ? appScale.toDouble() : 1.0;
-      uiDensity = _DisplayDensity.fromConfig(config['uiDensity']);
+      appFontScale = appScale is num ? appScale.toDouble() : 1.0;
+      _interfaceDensity.restore(config['uiDensity']);
 
       windowSize =
           config['windowSize'] == null ? null : Size(config['windowSize']['width'], config['windowSize']['height']);
@@ -791,9 +839,129 @@ class AppConfiguration {
   }
 
   Future<void> _writeQueue = Future<void>.value();
+  Object get configWriteToken => _writeQueue;
   Future<void>? _pendingFlush;
   Future<void> Function(Map<String, String>)? _forwardDetailPreferences;
   Map<String, String> _lastSavedDetailPreferences = {};
+
+  static const _themePreferenceKeys = {
+    'mode',
+    'useMaterial3',
+    'useAmoled',
+    'themeColor',
+    'themeSecondary',
+    'themeTertiary',
+    'themeSurface',
+    'paletteStyle',
+    'themePreset',
+    'savedThemes',
+    'activeSavedThemeName',
+  };
+  static const _settingsKeys = {
+    ..._themePreferenceKeys,
+    'language',
+    'languageScript',
+    'appFontFamily',
+    'appFontScale',
+    'uiDensity',
+    'captureListDensity',
+    'editorFontFamily',
+    'editorFontSize',
+    'editorColorScheme',
+    'windowCloseAction',
+    'clearConfirm',
+    'memoryCleanupThreshold',
+    'toolbarPins',
+    'headerViewMode',
+    'detailTabAlignment',
+    'detailTabLabelAlignment',
+    'detailHeaderDensity',
+  };
+  Future<void> Function(Map<String, dynamic>)? _forwardSettings;
+  void Function(DisplayDensitySetting, double)? _previewSettingsDensity;
+  Map<String, dynamic> _savedSettings = {};
+
+  Map<String, dynamic> get desktopSettings {
+    final config = toJson();
+    return {for (final key in _settingsKeys) key: config[key]};
+  }
+
+  void forwardDesktopSettings(
+    Map<String, dynamic> settings,
+    Future<void> Function(Map<String, dynamic>) send,
+    void Function(DisplayDensitySetting, double) preview,
+  ) {
+    _applyDesktopSettings(settings);
+    _savedSettings = desktopSettings;
+    _forwardSettings = send;
+    _previewSettingsDensity = preview;
+  }
+
+  Future<void> saveDesktopSettings(Map<String, dynamic> changes) async {
+    if (changes.keys.any((key) => !_settingsKeys.contains(key))) {
+      throw const FormatException('Invalid desktop setting');
+    }
+    final detailRevisions = {..._headerViewMode._localRevisions, ..._detailLayout._localRevisions};
+    _pendingFlush = null;
+    await _enqueueConfigWrite(() async {
+      await writeConfig({...toJson(), ...changes});
+      _applyDesktopSettings(changes, detailRevisions: detailRevisions);
+    });
+  }
+
+  void _applyDesktopSettings(Map<String, dynamic> changes, {Map<String, int>? detailRevisions}) {
+    final current = {...desktopSettings, ...changes};
+    if (changes.keys.any(_themePreferenceKeys.contains)) {
+      _theme = ThemeModel.fromJson(current);
+      _savedThemes.clear();
+      if (current['savedThemes'] case final List entries) {
+        for (final entry in entries) {
+          final saved = SavedTheme.fromJson(entry);
+          _savedThemes.putIfAbsent(_themeKey(saved.name), () => saved);
+        }
+      }
+      if (current['activeSavedThemeName'] case final String name) {
+        _theme.saved = _savedThemes[_themeKey(name)];
+      }
+    }
+    if (changes.containsKey('language') || changes.containsKey('languageScript')) {
+      _language = current['language'] == null
+          ? null
+          : Locale.fromSubtags(languageCode: current['language'], scriptCode: current['languageScript']);
+    }
+    if (changes.containsKey('appFontFamily')) appFontFamily = changes['appFontFamily'] as String?;
+    if (changes.containsKey('appFontScale')) appFontScale = (changes['appFontScale'] as num).toDouble();
+    if (changes.containsKey('uiDensity')) _interfaceDensity.restore(changes['uiDensity']);
+    if (changes.containsKey('captureListDensity')) _captureDensity.restore(changes['captureListDensity']);
+    if (changes.containsKey('editorFontFamily')) editorFontFamily = changes['editorFontFamily'] as String?;
+    if (changes.containsKey('editorFontSize')) editorFontSize = (changes['editorFontSize'] as num).toDouble();
+    if (changes.containsKey('editorColorScheme')) {
+      editorColorScheme = EditorColorScheme.fromConfig(changes['editorColorScheme']);
+    }
+    if (changes.containsKey('windowCloseAction')) windowCloseAction = WindowCloseAction.fromConfig(changes);
+    if (changes.containsKey('clearConfirm')) clearConfirm = changes['clearConfirm'] as bool;
+    if (changes.containsKey('memoryCleanupThreshold')) {
+      memoryCleanupThreshold = changes['memoryCleanupThreshold'] as int?;
+    }
+    if (changes['toolbarPins'] case final List pins) toolbarPins.value = pins.cast<String>();
+    if (detailRevisions == null) {
+      _headerViewMode.restore(current);
+      _detailLayout.restore(current);
+    } else {
+      final detail = {
+        for (final key in _detailPreferences.keys)
+          if (changes.containsKey(key)) key: changes[key] as String,
+      };
+      _headerViewMode.publish(detail, detailRevisions);
+      _detailLayout.publish(detail, detailRevisions);
+    }
+    if (changes.keys.any((key) =>
+        _themePreferenceKeys.contains(key) ||
+        const {'language', 'languageScript', 'appFontFamily', 'editorFontFamily', 'editorFontSize', 'editorColorScheme'}
+            .contains(key))) {
+      globalChange.value = !globalChange.value;
+    }
+  }
 
   void forwardDetailPreferences(Future<void> Function(Map<String, String>) send) {
     _lastSavedDetailPreferences = _detailPreferences;
@@ -862,8 +1030,28 @@ class AppConfiguration {
     return _pendingFlush = operation;
   }
 
+  Future<void> flushConfigForClose() async {
+    while (true) {
+      final flush = flushConfig();
+      final writes = _writeQueue;
+      await flush;
+      if (identical(writes, _writeQueue)) return;
+    }
+  }
+
   @protected
   Future<void> writeConfig(Map<String, dynamic> config) async {
+    if (_forwardSettings case final send?) {
+      final changes = {
+        for (final key in _settingsKeys)
+          if (jsonEncode(config[key]) != jsonEncode(_savedSettings[key])) key: config[key],
+      };
+      if (changes.isNotEmpty) {
+        await send(changes);
+        _savedSettings.addAll(changes);
+      }
+      return;
+    }
     if (_forwardDetailPreferences != null) throw StateError('Only the main window can write UI configuration');
     var file = await _path;
     if (await FileSystemEntity.isLink(file.path)) {
@@ -899,12 +1087,12 @@ class AppConfiguration {
       "autoReadEnabled": autoReadEnabled,
       "clearConfirm": clearConfirm,
       "captureListDensity": _captureDensity.committed,
-      "alwaysShowCaptureRowDetails": alwaysShowCaptureRowDetails,
+      "showCaptureRowDetails": showCaptureRowDetails,
       "editorFontFamily": editorFontFamily,
       "editorFontSize": editorFontSize,
       "editorColorScheme": editorColorScheme.name,
       "appFontFamily": appFontFamily,
-      "appFontScale": appFontScale,
+      "appFontScale": _appFontSize.committed / 100,
       "uiDensity": _interfaceDensity.committed,
       if (memoryCleanupThreshold != null) 'memoryCleanupThreshold': memoryCleanupThreshold,
       if (Platforms.isMobile()) 'pipEnabled': pipEnabled.value,
@@ -968,12 +1156,26 @@ class CaptureRowMetrics {
   }
 }
 
-class AppDisplaySettings extends InheritedNotifier<ValueNotifier<bool>> {
+class AppDisplaySettings extends InheritedNotifier<Listenable> {
   final AppConfiguration configuration;
 
-  AppDisplaySettings({super.key, required this.configuration, required super.child})
-      : super(notifier: configuration.globalChange);
+  AppDisplaySettings(
+      {super.key, required this.configuration, required Widget child, bool includeCaptureChanges = false})
+      : super(
+          notifier: includeCaptureChanges ? configuration._mobileDisplayChanges : configuration.globalChange,
+          child: _CaptureDisplaySettings(configuration, child: child),
+        );
 
   static AppConfiguration? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppDisplaySettings>()?.configuration ?? AppConfiguration.current;
+
+  static AppConfiguration? captureOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_CaptureDisplaySettings>()?.configuration ?? AppConfiguration.current;
+}
+
+class _CaptureDisplaySettings extends InheritedNotifier<Listenable> {
+  final AppConfiguration configuration;
+
+  _CaptureDisplaySettings(this.configuration, {required super.child})
+      : super(notifier: configuration.captureDisplayChange);
 }

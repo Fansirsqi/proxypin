@@ -1624,12 +1624,10 @@ class AppLocalizationsTh extends AppLocalizations {
   String get captureListDensitySubtitle => 'ปรับความสูงของแต่ละแถวในรายการจับข้อมูล';
 
   @override
-  String get alwaysShowCaptureRowDetails => 'แสดงบรรทัดที่สองเสมอ';
+  String get showCaptureRowDetails => 'แสดงรายละเอียดคำขอเพิ่มเติม';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return 'แสดงสถานะ เวลา และระยะเวลาแม้ต่ำกว่า $threshold%';
-  }
+  String get showCaptureRowDetailsSubtitle => 'แสดงสถานะ เวลา และระยะเวลาในรายการจับข้อมูล';
 
   @override
   String get densityComfortable => 'สบายตา';

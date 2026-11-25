@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/cert/cert_data.dart';
@@ -45,7 +46,7 @@ class PCCertChecker {
           context: context,
           builder: (context) {
             final localizations = AppLocalizations.of(context)!;
-            return AlertDialog(
+            return FloatingAlertDialog(
               content: _AutomaticInstall(),
               actions: <Widget>[
                 TextButton(
@@ -87,7 +88,7 @@ class _PCCertState extends State<PCCert> with TickerProviderStateMixin {
     final localizations = AppLocalizations.of(context)!;
     final isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
-    return SimpleDialog(
+    return FloatingSimpleDialog(
       titlePadding: const EdgeInsets.symmetric(),
       contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 15),
       title: Row(children: [
@@ -376,7 +377,7 @@ class _AutomaticInstallState extends State<_AutomaticInstall> {
     final localizations = AppLocalizations.of(context)!;
     return await showDialog<bool>(
           context: context,
-          builder: (dialogContext) => AlertDialog(
+          builder: (dialogContext) => FloatingAlertDialog(
             title: Text(isCN ? '卸载 ProxyPin CA' : 'Uninstall ProxyPin CA'),
             content: Text(isCN
                 ? '这会从系统信任库移除当前证书。使用同一张证书的其他 ProxyPin 版本也会失去系统信任。'

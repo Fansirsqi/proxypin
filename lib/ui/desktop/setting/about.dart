@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/app_update/app_update_repository.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -23,7 +24,7 @@ class _AppUpdateStateChecking extends State<DesktopAbout> {
     bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
     String gitHub = "https://github.com/wanghongenpin/proxypin";
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       titlePadding: const EdgeInsets.only(left: 20, top: 10, right: 15),
       title: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         const Expanded(child: SizedBox()),
@@ -87,7 +88,7 @@ class _AppUpdateStateChecking extends State<DesktopAbout> {
                   onTap: () {
                     showDialog(
                         context: context,
-                        builder: (ctx) => AlertDialog(
+                        builder: (ctx) => FloatingAlertDialog(
                               title: Text(localizations.privacyPolicy),
                               content: SingleChildScrollView(
                                   child: ConstrainedBox(
@@ -140,7 +141,7 @@ class _AppUpdateStateChecking extends State<DesktopAbout> {
     showDialog(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
+        return FloatingAlertDialog(
           title: Text(localizations.sponsorDonate),
           contentPadding: const EdgeInsets.only(left: 20, top: 10, right: 20, bottom: 10),
           content: SizedBox(

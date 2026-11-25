@@ -98,7 +98,8 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
   Widget build(BuildContext context) {
     super.build(context);
 
-    final tabHeight = (MediaQuery.textScalerOf(context).scale(12.5) + 16).clamp(40.0, double.infinity);
+    final tabFontSize = 12.5 * (AppDisplaySettings.of(context)?.appFontScale ?? 1);
+    final tabHeight = (MediaQuery.textScalerOf(context).scale(tabFontSize) + 16).clamp(40.0, double.infinity);
     final tabs = [localizations.captureDomains, localizations.captureRequests]
         .map((label) => Tab(
             height: tabHeight,
@@ -136,8 +137,8 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
                     title: TabBar(
                       tabs: tabs,
                       labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                      labelStyle: const TextStyle(fontSize: 12.5),
-                      unselectedLabelStyle: const TextStyle(fontSize: 12.5),
+                      labelStyle: TextStyle(fontSize: tabFontSize),
+                      unselectedLabelStyle: TextStyle(fontSize: tabFontSize),
                       dividerColor: Colors.transparent,
                     ),
                     automaticallyImplyLeading: false,
@@ -240,7 +241,14 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
         icon: const Icon(Icons.more_vert_outlined, size: 20),
         onSelected: _onMenuSelected,
         itemBuilder: (BuildContext context) {
+          final display = AppDisplaySettings.of(context);
           return <PopupMenuEntry<_RequestListMenuAction>>[
+            CheckedPopupMenuItem(
+              value: _RequestListMenuAction.showDetails,
+              checked: display?.showCaptureRowDetails ?? true,
+              enabled: display != null,
+              child: Text(localizations.showCaptureRowDetails),
+            ),
             _menuItem(_RequestListMenuAction.search,
                 icon: const Icon(Icons.search, size: 17), text: localizations.search),
             _menuItem(_RequestListMenuAction.export,
@@ -266,6 +274,10 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
 
   void _onMenuSelected(_RequestListMenuAction action) {
     switch (action) {
+      case _RequestListMenuAction.showDetails:
+        final display = AppDisplaySettings.of(context);
+        if (display != null) display.setShowCaptureRowDetails(!display.showCaptureRowDetails);
+        break;
       case _RequestListMenuAction.search:
         searchKey.currentState?.searchDialog();
         break;
@@ -453,4 +465,4 @@ class _ClearSelectionIntent extends Intent {
   const _ClearSelectionIntent();
 }
 
-enum _RequestListMenuAction { search, export, repeat, select, sort, report }
+enum _RequestListMenuAction { showDetails, search, export, repeat, select, sort, report }

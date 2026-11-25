@@ -18,6 +18,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:flutter/services.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -411,7 +412,7 @@ Future<T?> showConfirmDialog<T>(BuildContext context, {String? title, String? co
   return showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
+        return FloatingAlertDialog(
           title: Text(title!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           content: Text(content!),
           actions: [

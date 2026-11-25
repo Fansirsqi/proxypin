@@ -16,6 +16,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 
 /// MCP 端口编辑对话框。
@@ -73,7 +74,7 @@ class _PortEditDialogState extends State<PortEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FloatingAlertDialog(
       contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       title: Text(l.mcpPort, style: const TextStyle(fontSize: 16)),
       content: TextField(

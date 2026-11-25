@@ -18,6 +18,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/mcp/mcp_service.dart';
 import 'package:proxypin/network/bin/configuration.dart';
@@ -166,8 +167,7 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
             DesktopStatusBar(proxyServer: proxyServer, container: container, requestListStateKey: requestListStateKey),
         body: Row(
           children: [
-            LeftNavigationBar(
-                selectIndex: _selectIndex, appConfiguration: widget.appConfiguration, proxyServer: proxyServer),
+            LeftNavigationBar(selectIndex: _selectIndex, appConfiguration: widget.appConfiguration),
             Expanded(
               child: VerticalSplitView(
                   ratio: widget.appConfiguration.panelRatio,
@@ -197,7 +197,7 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
         context: context,
         barrierDismissible: false,
         builder: (_) {
-          return AlertDialog(
+          return FloatingAlertDialog(
               scrollable: true,
               actions: [
                 TextButton(

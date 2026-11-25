@@ -3,6 +3,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/network/components/manager/report_server_manager.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
@@ -15,7 +16,7 @@ Future<void> showReportServersDialog(BuildContext context) {
   return showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (ctx) => Dialog(
+    builder: (ctx) => FloatingDialog(
       insetPadding: const EdgeInsets.all(16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
@@ -122,7 +123,7 @@ class _ReportServersPageState extends State<ReportServersPage> {
       final result = await showDialog<ReportServer>(
         context: context,
         builder: (ctx) {
-          return AlertDialog(
+          return FloatingAlertDialog(
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
             contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 12),

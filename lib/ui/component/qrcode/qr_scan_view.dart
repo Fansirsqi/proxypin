@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_qr_reader_plus/flutter_qr_reader.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,7 +22,7 @@ class QrCodeScanner {
       bool isCN = localizations.localeName == 'zh';
       await showDialog(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => FloatingAlertDialog(
                 content: Text(isCN ? "请授予相机权限" : "Please grant camera permission"),
                 actions: <Widget>[
                   TextButton(

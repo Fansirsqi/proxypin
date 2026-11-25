@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:proxypin/utils/num.dart';
@@ -135,7 +136,7 @@ class _PacketPreviewDialogState extends State<PacketPreviewDialog> {
       const Tab(text: "HEX"),
     ];
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       content: SizedBox(
         width: min(MediaQuery.of(context).size.width * 0.8, 700),
         height: min(MediaQuery.of(context).size.height * 0.6, 650),

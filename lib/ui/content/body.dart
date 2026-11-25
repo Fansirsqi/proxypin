@@ -38,7 +38,7 @@ import 'package:proxypin/ui/component/json/theme.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
-import 'package:proxypin/ui/desktop/setting/request_rewrite.dart';
+import 'package:proxypin/ui/desktop/common.dart';
 import 'package:proxypin/ui/mobile/setting/request_rewrite.dart';
 import 'package:proxypin/utils/crypto_body_decoder.dart';
 import 'package:proxypin/utils/css_formatter.dart';
@@ -50,8 +50,8 @@ import 'package:proxypin/utils/platform.dart';
 import 'package:proxypin/utils/xml_formatter.dart';
 
 import '../component/search/highlight_text.dart';
+import '../component/search/preview_task.dart';
 import '../component/search/search_controller.dart';
-import '../component/search/virtualized_highlight_text.dart';
 import '../toolbox/encoder.dart';
 import 'detail_fields.dart';
 import 'read_only_body.dart';
@@ -64,6 +64,17 @@ Widget bodyContextMenu(BuildContext context, EditableTextState editableTextState
 bool _showsStream(HttpMessage? message, CryptoDecodedResult? decoded) =>
     decoded == null &&
     (message?.isWebSocket == true || (message?.contentType == ContentType.sse && message?.messages.isNotEmpty == true));
+
+bool _hasManyLines(String text) {
+  var offset = -1;
+  for (var line = 0; line < 80; line++) {
+    offset = text.indexOf('\n', offset + 1);
+    if (offset == -1) return false;
+  }
+  return true;
+}
+
+bool _usesVirtualText(String text) => text.length >= 2048 || _hasManyLines(text);
 
 ContentType _previewContentType(HttpMessage message) {
   final type = message.contentType;
@@ -135,6 +146,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
 
     _loadBodyText();
     _loadDecoded();
+    managerStateVersion.addListener(_loadRewriteEnabled);
     _loadRewriteEnabled();
   }
 
@@ -192,6 +204,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
         : [RuleType.responseReplace, RuleType.responseUpdate];
 
     var requestRewrites = await RequestRewriteManager.instance;
+    if (!mounted || widget.httpMessage != message) return;
     rewriteEnabled.value = requestRewrites.getRewriteRule(request.domainPath, types) != null;
   }
 
@@ -220,6 +233,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(onKeyEvent);
+    managerStateVersion.removeListener(_loadRewriteEnabled);
     searchController.dispose();
     super.dispose();
   }
@@ -236,7 +250,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
     }
 
     final contentType = _previewContentType(widget.httpMessage!);
-    final tabs = Tabs.of(contentType, _looksLikeJson);
+    final tabs = Tabs.of(contentType, _looksLikeJson, isSvg: widget.httpMessage!.isSvg);
 
     List<Widget> bodyContent(double? previewHeight) => [
           widget.inNewWindow ? const SizedBox() : titleWidget(tabs: tabs),
@@ -541,14 +555,16 @@ class HttpBodyState extends State<HttpBodyWidget> {
         icon: SvgIcon('download', size: 15, color: Theme.of(context).colorScheme.onSurfaceVariant),
         tooltip: localizations.saveImage,
         onPressed: () async {
-          var body = widget.httpMessage?.body;
-          if (body == null) {
-            return;
-          }
-          var bytes = Uint8List.fromList(body);
-          var extension = _imageExtension(bytes, widget.httpMessage?.headers.contentType);
-          var fileName = "image_${DateTime.now().millisecondsSinceEpoch}.$extension";
-          if (Platform.isIOS) {
+          final message = widget.httpMessage;
+          if (message == null) return;
+          final input = _textInput;
+          final isSvg = message.isSvg;
+          final body = isSvg ? await message.decodeBodyBytes() : message.body;
+          if (!mounted || _textInput != input || body == null || body.isEmpty) return;
+          final bytes = body is Uint8List ? body : Uint8List.fromList(body);
+          final extension = isSvg ? 'svg' : _imageExtension(bytes, message.headers.contentType);
+          final fileName = "image_${DateTime.now().millisecondsSinceEpoch}.$extension";
+          if (Platform.isIOS && !isSvg) {
             String? path = await ImagePickers.saveByteDataImageToGallery(bytes);
             if (path != null && mounted) {
               FlutterToastr.show(localizations.saveSuccess, context, duration: 2, rootNavigator: true);
@@ -556,7 +572,12 @@ class HttpBodyState extends State<HttpBodyWidget> {
             return;
           }
 
-          final saved = await FilePicker.saveFile(fileName: fileName, bytes: bytes, type: FileType.image);
+          final saved = await FilePicker.saveFile(
+            fileName: fileName,
+            bytes: bytes,
+            mimeType: isSvg ? 'image/svg+xml' : 'application/octet-stream',
+            type: FileType.image,
+          );
           if (saved != null && mounted) {
             FlutterToastr.show(localizations.saveSuccess, context, duration: 2, rootNavigator: true);
           }
@@ -615,40 +636,20 @@ class HttpBodyState extends State<HttpBodyWidget> {
 
   ///展示请求重写
   Future<void> showRequestRewrite() async {
-    HttpRequest? request;
-    if (widget.httpMessage == null) {
+    final message = widget.httpMessage;
+    final request = message is HttpRequest ? message : (message as HttpResponse?)?.request;
+    if (request == null) return;
+    final type = message is HttpRequest ? RuleType.requestReplace : RuleType.responseReplace;
+    if (Platforms.isDesktop()) {
+      await openCapturedRewrite(context, request, ruleType: type, response: message is HttpResponse ? message : null);
       return;
     }
 
-    bool isRequest = widget.httpMessage is HttpRequest;
-    if (widget.httpMessage is HttpRequest) {
-      request = widget.httpMessage as HttpRequest;
-    } else {
-      request = (widget.httpMessage as HttpResponse).request;
-    }
-    var requestRewrites = await RequestRewriteManager.instance;
-
-    var ruleType = isRequest ? RuleType.requestReplace : RuleType.responseReplace;
-    var rule = requestRewrites.getRequestRewriteRule(request!, ruleType);
-
-    var rewriteItems = await requestRewrites.getRewriteItems(rule);
-
-    if (!mounted) return;
-
-    if (Platforms.isMobile()) {
-      Navigator.push(
-          context, MaterialPageRoute(builder: (_) => RewriteRule(rule: rule, items: rewriteItems, request: request)));
-    } else {
-      showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (BuildContext context) => RewriteRuleEdit(rule: rule, items: rewriteItems, request: request))
-          .then((value) {
-        if (value is RequestRewriteRule && mounted) {
-          FlutterToastr.show(localizations.saveSuccess, context);
-        }
-      });
-    }
+    final manager = await RequestRewriteManager.instance;
+    final rule = manager.getRequestRewriteRule(request, type);
+    final items = await manager.getRewriteItems(rule);
+    if (!mounted || widget.httpMessage != message) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => RewriteRule(rule: rule, items: items, request: request)));
   }
 
   ///打开新窗口
@@ -732,6 +733,10 @@ class _BodyState extends State<_Body> {
   final _textReaderKey = GlobalKey<ReadOnlyBodyState>();
   (ViewType, String)? _formatInput;
   Future<String>? _formattedBody;
+  (ViewType, String)? _longInput;
+  PreviewTask<String>? _longFormat;
+  String? _longFormattedBody;
+  bool _longHighlight = false;
   String? _jsonInput;
   Future<(bool, Object?)>? _jsonTree;
   double _zoom = 1;
@@ -750,12 +755,26 @@ class _BodyState extends State<_Body> {
   @override
   void didUpdateWidget(covariant _Body oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bodyText != widget.bodyText || oldWidget.decoded != widget.decoded) {
+    final sourceChanged = oldWidget.bodyText != widget.bodyText || oldWidget.decoded != widget.decoded;
+    if (sourceChanged || oldWidget.viewType != widget.viewType) {
+      _longFormat?.cancel();
+      _longFormat = null;
+    }
+    if (sourceChanged) {
       _formatInput = null;
       _formattedBody = null;
+      _longInput = null;
+      _longFormattedBody = null;
+      _longHighlight = false;
       _jsonInput = null;
       _jsonTree = null;
     }
+  }
+
+  @override
+  void dispose() {
+    _longFormat?.cancel();
+    super.dispose();
   }
 
   @override
@@ -814,7 +833,9 @@ class _BodyState extends State<_Body> {
     if (bytes == null) return null;
     if (type == ViewType.hex) return bytes.map(intToHex).join(' ');
     final body = widget.decoded?.text ?? await widget.bodyText;
-    return body == null ? null : await _formatTextBody(type, body);
+    if (body == null) return null;
+    if (_formatsOnDemand(type, body)) return _longInput == (type, body) ? _longFormattedBody ?? body : body;
+    return _formatTextBody(type, body);
   }
 
   Widget _getBody(ViewType type) {
@@ -856,18 +877,31 @@ class _BodyState extends State<_Body> {
     }
 
     if (type == ViewType.image) {
-      final imageBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
       final label = AppLocalizations.of(context)!.detailMediaUnavailable;
       final placeholder = Center(child: Text(label));
+      final Widget image;
+      if (message.isSvg) {
+        final source = widget.bodyText;
+        image = source == null
+            ? placeholder
+            : KeyedSubtree(
+                key: ObjectKey(source),
+                child: futureWidget(
+                  source,
+                  (text) => SvgPicture.string(
+                    text,
+                    fit: BoxFit.scaleDown,
+                    errorBuilder: (context, error, stack) => placeholder,
+                  ),
+                ),
+              );
+      } else {
+        final imageBytes = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+        image = Image.memory(imageBytes, fit: BoxFit.scaleDown, errorBuilder: (context, error, stack) => placeholder);
+      }
       return ConstrainedBox(
         constraints: BoxConstraints(maxHeight: _previewHeight(context)),
-        child: Center(
-          heightFactor: 1,
-          child: message.headers.contentType.toLowerCase().startsWith('image/svg+xml')
-              ? SvgPicture.memory(imageBytes,
-                  fit: BoxFit.scaleDown, errorBuilder: (context, error, stack) => placeholder)
-              : Image.memory(imageBytes, fit: BoxFit.scaleDown, errorBuilder: (context, error, stack) => placeholder),
-        ),
+        child: Center(heightFactor: 1, child: image),
       );
     }
     if (type == ViewType.video) {
@@ -898,6 +932,7 @@ class _BodyState extends State<_Body> {
 
   Widget _renderText(ViewType type, String text) {
     if (type == ViewType.text) return _textViewer(text);
+    if (_formatsOnDemand(type, text)) return _renderLongCode(type, text);
     if (type == ViewType.json) {
       if (_jsonInput != text) {
         _jsonInput = text;
@@ -923,6 +958,72 @@ class _BodyState extends State<_Body> {
     );
   }
 
+  bool _formatsOnDemand(ViewType type, String text) =>
+      (type == ViewType.html || type == ViewType.xml || type == ViewType.js || type == ViewType.css) &&
+      (text.length >= _backgroundThreshold || _hasManyLines(text));
+
+  Widget _renderLongCode(ViewType type, String source) {
+    final input = (type, source);
+    final formatted = _longInput == input ? _longFormattedBody : null;
+    final highlight = _longInput == input && _longHighlight;
+    final strings = AppLocalizations.of(context)!;
+    const controlsHeight = 40.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: controlsHeight,
+          child: Row(
+            children: [
+              if (formatted == null)
+                TextButton(
+                  onPressed: _longFormat == null ? () => _formatLongCode(type, source) : null,
+                  child: _longFormat == null
+                      ? Text(strings.format)
+                      : const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              FilterChip(
+                label: Text(strings.highlight),
+                selected: highlight,
+                onSelected: (selected) => setState(() {
+                  _longInput = input;
+                  _longHighlight = selected;
+                }),
+              ),
+            ],
+          ),
+        ),
+        _textViewer(
+          formatted ?? source,
+          language: highlight ? _languageForViewType(type) : null,
+          height: max(0, _previewHeight(context) - controlsHeight),
+          forceVirtualized: true,
+        ),
+      ],
+    );
+  }
+
+  void _formatLongCode(ViewType type, String source) {
+    if (_longFormat != null) return;
+    final input = (type, source);
+    final task = PreviewTask.start(
+      _formatTextBodyIsolate,
+      {'type': type.name, 'body': source},
+      timeout: const Duration(seconds: 10),
+    );
+    setState(() {
+      _longInput = input;
+      _longFormat = task;
+    });
+    task.result.then((formatted) {
+      if (!mounted || _longFormat != task) return;
+      setState(() {
+        _longFormat = null;
+        _longFormattedBody = formatted;
+      });
+    });
+  }
+
   double _previewHeight(BuildContext context) =>
       max(0, widget.previewHeight ?? MediaQuery.sizeOf(context).height - 180);
 
@@ -946,27 +1047,15 @@ class _BodyState extends State<_Body> {
     }
   }
 
-  bool _needsVirtualization(String text) {
-    if (text.length >= 16384) return true;
-    var offset = -1;
-    for (var line = 0; line < 80; line++) {
-      offset = text.indexOf('\n', offset + 1);
-      if (offset == -1) return false;
-    }
-    return true;
-  }
-
-  Widget _textViewer(String text, {String? language}) {
-    final height = _previewHeight(context);
+  Widget _textViewer(String text, {String? language, double? height, bool forceVirtualized = false}) {
     final style = _textStyle;
-    final virtualized = _needsVirtualization(text);
     return ReadOnlyBody(
       key: _textReaderKey,
       text: text,
       language: language,
       style: style,
-      height: height,
-      virtualized: virtualized,
+      height: height ?? _previewHeight(context),
+      virtualized: forceVirtualized || _usesVirtualText(text),
       searchController: widget.searchController,
       scrollController: widget.scrollController,
       fallback: (style) => HighlightTextWidget(
@@ -983,7 +1072,7 @@ class _BodyState extends State<_Body> {
 class Tabs {
   final List<ViewType> list = [];
 
-  static Tabs of(ContentType? contentType, bool isJsonText) {
+  static Tabs of(ContentType? contentType, bool isJsonText, {bool isSvg = false}) {
     var tabs = Tabs();
     if (contentType == null) {
       return tabs;
@@ -995,6 +1084,7 @@ class Tabs {
       return tabs;
     }
 
+    if (isSvg) tabs.list.add(ViewType.image);
     if (contentType == ContentType.json) {
       tabs.list.add(ViewType.jsonText);
     }
@@ -1083,16 +1173,23 @@ class _HexViewerState extends State<HexViewer> {
   @override
   Widget build(BuildContext context) {
     final style = widget.style ?? const TextStyle(fontFamily: 'Courier', fontSize: 14);
+    Widget fallback(TextStyle style) => HighlightTextWidget(
+          style: style,
+          text: _text,
+          searchController: widget.searchController,
+          contextMenuBuilder: bodyContextMenu,
+        );
     if (_text.length > 100000) {
-      return VirtualizedHighlightText(
+      return ReadOnlyBody(
         text: _text,
         style: style,
-        height: widget.height,
+        height: widget.height ?? max(240, MediaQuery.sizeOf(context).height - 210),
+        virtualized: true,
         searchController: widget.searchController,
+        fallback: fallback,
       );
     }
-    return HighlightTextWidget(
-        style: style, text: _text, searchController: widget.searchController, contextMenuBuilder: bodyContextMenu);
+    return fallback(style);
   }
 
   String _formatHex(List<int> data, int bytesPerRow) {

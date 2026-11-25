@@ -236,7 +236,9 @@ class DomainListState extends State<DomainList> with AutomaticKeepAliveClientMix
             var list = containerMap[view.elementAt(index)];
 
             return Scaffold(
-                appBar: AppBar(title: Text(view.elementAt(index).domain, style: const TextStyle(fontSize: 16))),
+                appBar: AppBar(
+                    title: Text(view.elementAt(index).domain,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium)),
                 body: RequestSequence(
                   key: requestSequenceKey,
                   displayDomain: false,

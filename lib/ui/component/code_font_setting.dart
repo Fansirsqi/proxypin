@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -103,7 +104,7 @@ class _CodeFontFamilyTileState extends State<CodeFontFamilyTile> {
     final result = await showDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
+        return FloatingAlertDialog(
           title: Text(localizations.codeFontCustom),
           content: SizedBox(
             width: 320,

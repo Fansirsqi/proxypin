@@ -28,17 +28,30 @@ import 'theme_palette.dart';
 /// @author wanghongen
 /// 2024/1/2
 class Preference extends StatefulWidget {
-  final Configuration configuration;
+  final Configuration? configuration;
   final AppConfiguration appConfiguration;
+  final bool? _startup;
+  final ValueChanged<bool>? onStartupChanged;
 
-  const Preference(this.appConfiguration, this.configuration, {super.key});
+  const Preference(this.appConfiguration, Configuration this.configuration, {super.key})
+      : _startup = null,
+        onStartupChanged = null;
+
+  const Preference.remote(
+    this.appConfiguration, {
+    super.key,
+    required bool startup,
+    required ValueChanged<bool> this.onStartupChanged,
+  })  : configuration = null,
+        _startup = startup;
+
+  bool get startup => configuration?.startup ?? _startup!;
 
   @override
   State<StatefulWidget> createState() => _PreferenceState();
 }
 
 class _PreferenceState extends State<Preference> {
-  late Configuration configuration;
   late AppConfiguration appConfiguration;
 
   final memoryCleanupController = TextEditingController();
@@ -47,7 +60,6 @@ class _PreferenceState extends State<Preference> {
   @override
   void initState() {
     super.initState();
-    configuration = widget.configuration;
     appConfiguration = widget.appConfiguration;
     if (!memoryCleanupList.contains(appConfiguration.memoryCleanupThreshold)) {
       memoryCleanupController.text = appConfiguration.memoryCleanupThreshold.toString();
@@ -62,8 +74,14 @@ class _PreferenceState extends State<Preference> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final factor = 1 / appConfiguration.appFontScale;
     return Theme(
-      data: Theme.of(context).copyWith(visualDensity: VisualDensity.standard),
+      data: theme.copyWith(
+        visualDensity: VisualDensity.standard,
+        textTheme: theme.textTheme.apply(fontSizeFactor: factor),
+        primaryTextTheme: theme.primaryTextTheme.apply(fontSizeFactor: factor),
+      ),
       child: Builder(builder: _buildPreferences),
     );
   }
@@ -157,11 +175,12 @@ class _PreferenceState extends State<Preference> {
           subtitle: Text(localizations.autoStartupDescribe, style: subtitleStyle),
           trailing: SwitchWidget(
               scale: 0.75,
-              value: configuration.startup,
-              onChanged: (value) {
-                configuration.startup = value;
-                configuration.flushConfig();
-              })),
+              value: widget.startup,
+              onChanged: widget.onStartupChanged ??
+                  (value) {
+                    widget.configuration!.startup = value;
+                    widget.configuration!.flushConfig();
+                  })),
       ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(localizations.clearConfirm, style: titleStyle),

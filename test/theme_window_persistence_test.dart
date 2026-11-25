@@ -200,7 +200,7 @@ void main() {
         (tabs: DetailTabAlignment.center, labels: DetailTabLabelAlignment.center, headers: HeaderDensity.compact);
     final second = other.flushConfig();
     await received.future;
-    primary.appFontScale = 1.25;
+    primary.appFontScale = 1.15;
     final primaryFlush = primary.flushConfig();
     expect(writes, hasLength(1));
     expect((await reload()).themePreset, ThemePreset.gmail);
@@ -215,7 +215,7 @@ void main() {
     expect(restored.themePreset.name, 'Concurrent');
     expect(restored.headerViewMode.value, 'text');
     expect(restored.detailLayout.value.tabs, DetailTabAlignment.center);
-    expect(restored.appFontScale, 1.25);
+    expect(restored.appFontScale, 1.15);
   });
 
   test('pending detail commits preserve newer local changes field by field', () async {

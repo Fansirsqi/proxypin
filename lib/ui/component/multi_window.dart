@@ -47,6 +47,8 @@ import '../desktop/setting/request_breakpoint.dart';
 import '../desktop/setting/request_block.dart';
 import '../desktop/setting/request_crypto.dart';
 import '../desktop/setting/request_map.dart';
+import '../desktop/setting/setting.dart';
+import '../desktop/setting/settings_session.dart';
 import '../toolbox/cert_hash.dart';
 import '../toolbox/encoder.dart';
 import '../toolbox/js_run.dart';
@@ -64,6 +66,9 @@ bool isMultiWindow = false;
 ///多窗口
 Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
   isMultiWindow = true;
+  if (argument['name'] == Setting.windowName) {
+    return Setting(windowId: windowId, session: argument['settingsSession'] as DesktopSettingsSession);
+  }
   //请求编辑器
   if (argument['name'] == 'RequestEditor') {
     return RequestEditor(
@@ -109,6 +114,19 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
   if (argument['name'] == 'RequestRewriteWidget') {
     return futureWidget(
         RequestRewriteManager.instance, (data) => RequestRewriteWidget(windowId: windowId, requestRewrites: data));
+  }
+
+  if (argument['name'] == RewriteRuleEdit.windowName) {
+    final request = HttpRequest.fromJson(Map<String, dynamic>.from(argument['request'] as Map));
+    final responseJson = argument['response'] as Map?;
+    if (responseJson != null) {
+      request.response = HttpResponse.fromJson(Map<String, dynamic>.from(responseJson))..request = request;
+    }
+    return CapturedRewriteWindow(
+      windowId: windowId,
+      request: request,
+      ruleType: RuleType.fromName(argument['ruleType'] as String),
+    );
   }
 
   if (argument['name'] == 'RequestBlock') {
@@ -214,6 +232,7 @@ class MultiWindow {
   /// 单例型子窗口（编辑共享配置的管理器页）：重复打开时前置已有窗口而不是再开一个，
   /// 避免多个窗口各自加载/保存同一配置互相覆盖，导致编辑静默丢失
   static const Set<String> _singletonWidgets = {
+    Setting.windowName,
     'RequestBlock',
     'RequestRewriteWidget',
     'RequestMapPage',
@@ -226,24 +245,40 @@ class MultiWindow {
   /// 正在创建中的单例窗口：createWindow 需启动新 engine 耗时数百毫秒，
   /// 期间连点在原生窗口注册表里还查不到，会重复开
   static final Set<String> _openingWidgets = {};
+  static int _rewriteSequence = 0;
+  static final _standaloneRewriteUpdates = <String, ({int sequence, String? path})>{};
+  static Future<void> _rewriteWrites = Future.value();
 
   /// 刷新请求重写
   static Future<void> invokeRefreshRewrite(Operation operation,
-      {int? index, RequestRewriteRule? rule, List<RewriteItem>? items, bool? enabled, List<int>? order}) async {
+      {int? index,
+      RequestRewriteRule? rule,
+      List<RewriteItem>? items,
+      bool? enabled,
+      List<int>? order,
+      bool capturedEditor = false}) async {
+    final standalone = DesktopMultiWindow.isStandalone;
     final arguments = {
       "enabled": enabled,
       "operation": operation.name,
       'index': index,
       'rule': rule?.toJson(),
       'items': items?.map((e) => e.toJson()).toList(),
-      'order': order
+      'order': order,
+      if (capturedEditor) 'capturedEditor': true,
+      if (standalone) 'sequence': ++_rewriteSequence,
     };
     Future<void> refresh() async {
       final path = await DesktopMultiWindow.invokeMainWindowMethod<String>("refreshRequestRewrite", arguments);
-      if (DesktopMultiWindow.isStandalone && rule != null && path != null) rule.rewritePath = path;
+      if (capturedEditor && path == null) throw StateError('The rewrite rule is no longer available.');
+      if ((standalone || capturedEditor) && rule != null && path != null) rule.rewritePath = path;
     }
 
-    await DesktopMultiWindow.saveStandaloneChanges(refresh);
+    if (capturedEditor) {
+      await refresh();
+      return;
+    }
+    await DesktopMultiWindow.saveStandaloneChanges(refresh, retryOnClose: standalone);
   }
 
   static Future<WindowController> openWindow(String title, String widgetName,
@@ -262,7 +297,7 @@ class MultiWindow {
     }
 
     try {
-      registerMethodHandler();
+      await registerMethodHandler();
       return await DesktopMultiWindow.createWindow(
         jsonEncode({'name': widgetName, ...?args}),
         title: Platform.isMacOS ? null : title,
@@ -288,7 +323,7 @@ class MultiWindow {
           'args': args,
         });
       } else if (standalone) {
-        registerMethodHandler();
+        await registerMethodHandler();
         await DesktopMultiWindow.launchStandaloneWindow(title, size, {'name': widgetName, ...?args},
             singleton: singleton);
       } else {
@@ -334,8 +369,22 @@ class MultiWindow {
   static bool _refreshRewrite = false;
 
   static Future<String?> _handleRefreshRewrite(Operation operation, Map<dynamic, dynamic> arguments,
-      {required bool persist}) async {
+      {String? standaloneId}) {
+    final update = _rewriteWrites.then((_) => _applyRewriteUpdate(operation, arguments, standaloneId: standaloneId));
+    _rewriteWrites = update.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return update;
+  }
+
+  static Future<String?> _applyRewriteUpdate(Operation operation, Map<dynamic, dynamic> arguments,
+      {String? standaloneId}) async {
     RequestRewriteManager requestRewrites = await RequestRewriteManager.instance;
+    final sequence = arguments['sequence'] as int?;
+    final capturedEditor = arguments['capturedEditor'] == true;
+    final previous = _standaloneRewriteUpdates[standaloneId];
+    if (!capturedEditor && previous != null && previous.sequence == sequence) {
+      await requestRewrites.flushRequestRewriteConfig();
+      return previous.path;
+    }
     String? path;
 
     switch (operation) {
@@ -345,10 +394,16 @@ class MultiWindow {
         List<dynamic>? list = arguments['items'] as List<dynamic>?;
         List<RewriteItem>? items = list?.map((e) => RewriteItem.fromJson(e)).toList();
 
-        if (operation == Operation.add) {
+        final capturedPath = rule.rewritePath ?? previous?.path;
+        if (operation == Operation.add && (!capturedEditor || capturedPath == null)) {
           await requestRewrites.addRule(rule, items!);
         } else {
-          await requestRewrites.updateRule(arguments['index'], rule, items);
+          final index = capturedEditor
+              ? requestRewrites.rules.indexWhere((existing) => existing.rewritePath == capturedPath)
+              : arguments['index'] as int;
+          if (index < 0) return null;
+          if (capturedEditor) rule.rewritePath = capturedPath;
+          await requestRewrites.updateRule(index, rule, items);
         }
         path = rule.rewritePath;
         break;
@@ -372,7 +427,8 @@ class MultiWindow {
         break;
     }
 
-    if (persist) {
+    if (standaloneId != null) {
+      if (sequence != null) _standaloneRewriteUpdates[standaloneId] = (sequence: sequence, path: path);
       await requestRewrites.flushRequestRewriteConfig();
       return path;
     }
@@ -386,7 +442,7 @@ class MultiWindow {
   }
 }
 
-bool _registerHandler = false;
+Future<void>? _methodRegistration;
 
 /// 主窗口管理器状态版本号：子窗口经 invokeMainWindowMethod 触发主窗口 reload 后递增，
 /// 观察者（如工具栏快捷图标启用态高亮）据此刷新
@@ -399,13 +455,18 @@ Map<String, dynamic>? _currentProxyInfo() {
 }
 
 /// 桌面端多窗口 注册方法处理器
-void registerMethodHandler() {
-  if (_registerHandler) {
-    return;
-  }
-  _registerHandler = true;
-  DesktopMultiWindow.onStandaloneClosed = ScriptManager.removeLogHandler;
-  DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
+Future<void> registerMethodHandler() => _methodRegistration ??= _registerMethodHandler();
+
+Future<void> _registerMethodHandler() async {
+  DesktopMultiWindow.onStandaloneClosed = (id) {
+    resetSettingsPreview(id);
+    MultiWindow._standaloneRewriteUpdates.remove(id);
+    ScriptManager.removeLogHandler(id);
+  };
+  await DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
+    if (DesktopMultiWindow.desktopSettingsMethods.contains(call.method)) {
+      return handleDesktopSettingsMethod(call.method, call.arguments, fromWindowId);
+    }
     if (call.method == 'openToolWindow') {
       final args = call.arguments as Map;
       await MultiWindow.openToolWindow(
@@ -455,9 +516,18 @@ void registerMethodHandler() {
           .toList(growable: false);
     }
     logger.d('${call.method} $fromWindowId');
+    if (call.method == 'getCapturedRewrite') {
+      final args = call.arguments as Map;
+      final request = HttpRequest(HttpMethod.valueOf(args['method'] as String), args['url'] as String,
+          protocolVersion: args['protocolVersion'] as String);
+      final manager = await RequestRewriteManager.instance;
+      final rule = manager.getRequestRewriteRule(request, RuleType.fromName(args['type'] as String));
+      final items = await manager.getRewriteItems(rule);
+      return {'rule': rule.toJson(), 'items': items?.map((item) => item.toJson()).toList()};
+    }
     if (call.method == 'refreshRequestRewrite') {
       final path = await MultiWindow._handleRefreshRewrite(Operation.of(call.arguments['operation']), call.arguments,
-          persist: fromWindowId.startsWith('tool:'));
+          standaloneId: fromWindowId.startsWith('tool:') ? fromWindowId : null);
       managerStateVersion.value++;
       return path;
     }

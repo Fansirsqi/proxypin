@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/app_update/desktop_update_service.dart';
 import 'package:proxypin/ui/app_update/remote_version_entity.dart';
@@ -81,7 +82,7 @@ class DesktopUpdateDialog extends StatelessWidget {
     final service = DesktopUpdateService.instance;
     final localizations = AppLocalizations.of(context)!;
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(localizations.appUpdateDialogTitle),
       content: ValueListenableBuilder<DesktopUpdateState>(
         valueListenable: service.state,

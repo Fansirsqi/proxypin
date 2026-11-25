@@ -183,8 +183,9 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
         const SizedBox(width: 5),
         Text("${localizations.type}: "),
         SizedBox(
-            width: 90,
+            width: 105,
             child: DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: rewriteItem.bodyType ?? ReplaceBodyType.text.name,
                 focusColor: Colors.transparent,
                 itemHeight: 48,
@@ -228,9 +229,9 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
       if (rewriteItem.bodyType == ReplaceBodyType.file.name)
         fileBodyEdit(rewriteItem)
       else
-        Container(
-            height: 280,
-            decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
             child: Builder(builder: (context) {
               // ensure we update rewriteItem when editor text changes; remove previous listener to avoid duplicates
               if (_bodyListener != null) {
@@ -249,7 +250,9 @@ class RewriteReplaceState extends State<DesktopRewriteReplace> {
                 textStyle: codeTextStyle(context, size: 14),
                 finderBuilder: (c, controller) => FindPanelView(controller: controller),
               );
-            }))
+            }),
+          ),
+        )
     ]);
   }
 

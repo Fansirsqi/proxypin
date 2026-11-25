@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/component/code_font_setting.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -89,7 +90,7 @@ class _AppFontFamilyTileState extends State<AppFontFamilyTile> {
     final controller = TextEditingController(text: current ?? '');
     final result = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => FloatingAlertDialog(
         title: Text(localizations.appFont),
         content: SizedBox(
           width: 320,
@@ -119,39 +120,22 @@ class AppFontScaleTile extends StatelessWidget {
 
   const AppFontScaleTile({super.key, this.titleStyle, this.subtitleStyle, this.showSubtitle = true});
 
-  static const List<double> scales = [0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2, 1.25];
-
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
     final config = AppDisplaySettings.of(context);
-    final current = config?.appFontScale ?? 1.0;
-    final values = scales.contains(current) ? scales : ([...scales, current]..sort());
-
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(localizations.appFontScale, style: titleStyle),
-      subtitle: showSubtitle
-          ? Text(localizations.appFontScaleSubtitle, style: subtitleStyle ?? const TextStyle(fontSize: 12))
-          : null,
-      trailing: SizedBox(
-        width: 200,
-        child: DropdownButton<double>(
-          value: current,
-          isExpanded: true,
-          focusColor: Colors.transparent,
-          onChanged: (scale) {
-            if (scale == null) {
-              return;
-            }
-            config?.applyDisplaySetting(() => config.appFontScale = scale);
-          },
-          items: values
-              .map((scale) => DropdownMenuItem<double>(value: scale, child: Text('${(scale * 100).round()}%')))
-              .toList(),
-        ),
-      ),
-    );
+    Widget tile(double? value) => _DensityTile(
+          configuration: config,
+          setting: DisplayDensitySetting.fontSize,
+          density: value,
+          title: localizations.appFontScale,
+          titleStyle: titleStyle,
+          subtitle: showSubtitle ? localizations.appFontScaleSubtitle : null,
+          subtitleStyle: subtitleStyle,
+        );
+    return config == null
+        ? tile(null)
+        : ValueListenableBuilder(valueListenable: config.appFontSizeChange, builder: (_, value, __) => tile(value));
   }
 }
 
@@ -168,15 +152,18 @@ class UiDensityTile extends StatelessWidget {
     final localizations = AppLocalizations.of(context)!;
     final config = AppDisplaySettings.of(context);
 
-    return _DensityTile(
-      configuration: config,
-      setting: DisplayDensitySetting.interface,
-      density: config?.uiDensity,
-      title: localizations.uiDensity,
-      titleStyle: titleStyle,
-      subtitle: showSubtitle ? localizations.uiDensitySubtitle : null,
-      subtitleStyle: subtitleStyle,
-    );
+    Widget tile(double? value) => _DensityTile(
+          configuration: config,
+          setting: DisplayDensitySetting.interface,
+          density: value,
+          title: localizations.uiDensity,
+          titleStyle: titleStyle,
+          subtitle: showSubtitle ? localizations.uiDensitySubtitle : null,
+          subtitleStyle: subtitleStyle,
+        );
+    return config == null
+        ? tile(null)
+        : ValueListenableBuilder(valueListenable: config.uiDensityChange, builder: (_, value, __) => tile(value));
   }
 }
 
@@ -190,7 +177,7 @@ class CaptureDensityTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final config = AppDisplaySettings.of(context);
+    final config = AppDisplaySettings.captureOf(context);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -207,17 +194,15 @@ class CaptureDensityTile extends StatelessWidget {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: Text(localizations.alwaysShowCaptureRowDetails, style: titleStyle),
+          title: Text(localizations.showCaptureRowDetails, style: titleStyle),
           subtitle: showSubtitle
               ? Text(
-                  localizations.alwaysShowCaptureRowDetailsSubtitle(AppConfiguration.captureRowDetailsThreshold),
+                  localizations.showCaptureRowDetailsSubtitle,
                   style: subtitleStyle ?? const TextStyle(fontSize: 12),
                 )
               : null,
-          value: config?.alwaysShowCaptureRowDetails ?? false,
-          onChanged: config == null
-              ? null
-              : (value) => config.applyDisplaySetting(() => config.alwaysShowCaptureRowDetails = value),
+          value: config?.showCaptureRowDetails ?? true,
+          onChanged: config?.setShowCaptureRowDetails,
         ),
       ],
     );
@@ -247,7 +232,7 @@ class _DensityTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final percent = density ?? AppConfiguration.defaultDisplayDensity;
     final config = configuration;
-    String format(double value) => '${setting == DisplayDensitySetting.captureList ? value.floor() : value.round()}%';
+    String format(double value) => '${value.round()}%';
 
     final style = subtitleStyle ?? const TextStyle(fontSize: 12);
 
@@ -275,7 +260,7 @@ class _DensityTile extends StatelessWidget {
               label: title,
               child: Slider(
                 value: percent,
-                min: AppConfiguration.minimumDisplayDensity,
+                min: setting.minimum,
                 max: AppConfiguration.maximumDisplayDensity,
                 showValueIndicator: ShowValueIndicator.never,
                 semanticFormatterCallback: format,

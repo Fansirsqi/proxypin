@@ -1630,12 +1630,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get captureListDensitySubtitle => 'Adjust row height in the capture list';
 
   @override
-  String get alwaysShowCaptureRowDetails => 'Always show the second line';
+  String get showCaptureRowDetails => 'Show extra request details';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return 'Show status, time and duration even below $threshold%';
-  }
+  String get showCaptureRowDetailsSubtitle => 'Show status, time and duration in the capture list';
 
   @override
   String get densityComfortable => 'Comfortable';

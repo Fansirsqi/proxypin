@@ -1,22 +1,34 @@
 import 'package:flutter/material.dart';
-import 'package:proxypin/network/components/manager/request_rewrite_manager.dart';
 import 'package:proxypin/network/components/manager/rewrite_rule.dart';
 import 'package:proxypin/network/http/http.dart';
+import 'package:proxypin/l10n/app_localizations.dart';
+import 'package:proxypin/ui/component/multi_window.dart';
 
 import 'setting/request_rewrite.dart';
 
-/// 显示请求重写对话框
-Future<void> showRequestRewriteDialog(BuildContext context, HttpRequest request) async {
-  bool isRequest = request.response == null;
-  var requestRewrites = await RequestRewriteManager.instance;
-
-  var ruleType = isRequest ? RuleType.requestReplace : RuleType.responseReplace;
-  var rule = requestRewrites.getRequestRewriteRule(request, ruleType);
-  var rewriteItems = await requestRewrites.getRewriteItems(rule);
-  if (!context.mounted) return;
-
-  showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => RewriteRuleEdit(rule: rule, items: rewriteItems, request: request));
+Future<void> openCapturedRewrite(
+  BuildContext context,
+  HttpRequest request, {
+  HttpResponse? response,
+  RuleType? ruleType,
+}) async {
+  response ??= request.response;
+  final requestDraft = HttpRequest(request.method, request.requestUrl, protocolVersion: request.protocolVersion)
+    ..headers.addAll(request.headers)
+    ..body = request.body;
+  final responseDraft = response == null
+      ? null
+      : (HttpResponse(response.status, protocolVersion: response.protocolVersion)
+        ..headers.addAll(response.headers)
+        ..body = response.body);
+  await MultiWindow.openToolWindow(
+    AppLocalizations.of(context)!.requestRewriteRule,
+    RewriteRuleEdit.windowName,
+    size: const Size(800, 680),
+    args: {
+      'request': requestDraft.toJson(),
+      'response': responseDraft?.toJson(),
+      'ruleType': (ruleType ?? (response == null ? RuleType.requestReplace : RuleType.responseReplace)).name,
+    },
+  );
 }

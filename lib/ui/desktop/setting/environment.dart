@@ -10,6 +10,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/environment_manager.dart';
 import 'package:proxypin/network/util/random.dart';
@@ -121,7 +122,7 @@ class _EnvironmentDialogState extends State<EnvironmentDialog> {
     final controller = TextEditingController(text: initial);
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => FloatingAlertDialog(
         title: Text(title, style: const TextStyle(fontSize: 15)),
         content: TextField(
           controller: controller,
@@ -140,7 +141,7 @@ class _EnvironmentDialogState extends State<EnvironmentDialog> {
   Future<bool?> _confirm(String message) {
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => FloatingAlertDialog(
         content: Text(message),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: Text(localizations.cancel)),
@@ -167,7 +168,7 @@ class _EnvironmentDialogState extends State<EnvironmentDialog> {
   Widget build(BuildContext context) {
     final envs = [_draftGlobal, ..._draftNamed];
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       titlePadding: const EdgeInsets.only(top: 10, left: 20, right: 10),
       contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
       actionsPadding: const EdgeInsets.only(right: 15, bottom: 15),

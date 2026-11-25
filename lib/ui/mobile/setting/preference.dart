@@ -52,8 +52,14 @@ class _PreferenceState extends State<Preference> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final factor = 1 / appConfiguration.appFontScale;
     return Theme(
-      data: Theme.of(context).copyWith(visualDensity: VisualDensity.standard),
+      data: theme.copyWith(
+        visualDensity: VisualDensity.standard,
+        textTheme: theme.textTheme.apply(fontSizeFactor: factor),
+        primaryTextTheme: theme.primaryTextTheme.apply(fontSizeFactor: factor),
+      ),
       child: Builder(builder: _buildPreferences),
     );
   }

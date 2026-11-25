@@ -1,25 +1,22 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
+import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/ui/configuration.dart';
 
-const _portRange = '0–65535';
+const _portRange = '${Configuration.minPort}–${Configuration.maxPort}';
+final _portDigits = RegExp(r'^[0-9]+$');
 
-List<TextInputFormatter> _portFormatters() => [
-      FilteringTextInputFormatter.digitsOnly,
-      LengthLimitingTextInputFormatter(5),
-    ];
-
-Future<String?> _savePort(ProxyServer server, String value, AppLocalizations localizations) async {
-  final port = int.tryParse(value);
-  if (port == null || port < 0 || port > 65535) return _portRange;
+Future<String?> _savePort(Future<void> Function(int) changePort, String value, AppLocalizations localizations) async {
+  final port = _portDigits.hasMatch(value) ? int.tryParse(value, radix: 10) : null;
+  if (port == null || !Configuration.isValidPort(port)) return _portRange;
   try {
-    await server.changePort(port);
+    await changePort(port);
     final settings = AppConfiguration.current;
     if (settings != null) settings.globalChange.value = !settings.globalChange.value;
     return null;
@@ -30,14 +27,29 @@ Future<String?> _savePort(ProxyServer server, String value, AppLocalizations loc
 }
 
 class PortWidget extends StatefulWidget {
-  final ProxyServer proxyServer;
+  final ProxyServer? proxyServer;
+  final int? _port;
+  final Future<void> Function(int)? _changePort;
   final TextStyle? textStyle;
   final String? title;
 
   /// 前导图标（手机端设置页传 22px 语义色淡色块；桌面端不传保持原样）
   final Widget? leading;
 
-  const PortWidget({super.key, required this.proxyServer, this.textStyle, this.title, this.leading});
+  const PortWidget({super.key, required ProxyServer this.proxyServer, this.textStyle, this.title, this.leading})
+      : _port = null,
+        _changePort = null;
+
+  const PortWidget.remote(
+      {super.key, required int port, required Future<void> Function(int) changePort, this.textStyle})
+      : proxyServer = null,
+        _port = port,
+        _changePort = changePort,
+        title = null,
+        leading = null;
+
+  int get port => proxyServer?.port ?? _port!;
+  Future<void> Function(int) get changePort => proxyServer?.changePort ?? _changePort!;
 
   @override
   State<StatefulWidget> createState() {
@@ -55,15 +67,15 @@ class _PortState extends State<PortWidget> {
   @override
   void initState() {
     super.initState();
-    textController.text = widget.proxyServer.port.toString();
+    textController.text = widget.port.toString();
     portFocus.addListener(() async {
-      if (!mounted || _saving || portFocus.hasFocus || textController.text == widget.proxyServer.port.toString()) {
+      if (!mounted || _saving || portFocus.hasFocus || textController.text == widget.port.toString()) {
         return;
       }
       setState(() => _saving = true);
-      final error = await _savePort(widget.proxyServer, textController.text, localizations);
+      final error = await _savePort(widget.changePort, textController.text, localizations);
       if (!mounted) return;
-      textController.text = widget.proxyServer.port.toString();
+      textController.text = widget.port.toString();
       setState(() => _saving = false);
       if (error != null) FlutterToastr.show(error, context, duration: 3);
     });
@@ -79,8 +91,8 @@ class _PortState extends State<PortWidget> {
   @override
   Widget build(BuildContext context) {
     AppDisplaySettings.of(context);
-    if (!portFocus.hasFocus && !_saving && textController.text != widget.proxyServer.port.toString()) {
-      textController.text = widget.proxyServer.port.toString();
+    if (!portFocus.hasFocus && !_saving && textController.text != widget.port.toString()) {
+      textController.text = widget.port.toString();
     }
     return Row(children: [
       if (widget.leading != null) ...[
@@ -103,7 +115,6 @@ class _PortState extends State<PortWidget> {
             onTapOutside: (event) => portFocus.unfocus(),
             readOnly: _saving,
             keyboardType: TextInputType.number,
-            inputFormatters: _portFormatters(),
             decoration: const InputDecoration(),
           )),
       if (widget.leading != null) const Padding(padding: EdgeInsets.only(right: 14)),
@@ -137,7 +148,7 @@ class _ProxyPortDialogState extends State<ProxyPortDialog> {
       _saving = true;
       _error = null;
     });
-    final error = await _savePort(widget.proxyServer, _controller.text, AppLocalizations.of(context)!);
+    final error = await _savePort(widget.proxyServer.changePort, _controller.text, AppLocalizations.of(context)!);
     if (!mounted) return;
     if (error == null) {
       Navigator.of(context).pop();
@@ -154,7 +165,7 @@ class _ProxyPortDialogState extends State<ProxyPortDialog> {
     final localizations = AppLocalizations.of(context)!;
     return PopScope(
       canPop: !_saving,
-      child: AlertDialog(
+      child: FloatingAlertDialog(
         title: Text(localizations.port.trim().replaceFirst(RegExp(r'[:：]$'), '')),
         content: SizedBox(
           width: 280,
@@ -163,7 +174,6 @@ class _ProxyPortDialogState extends State<ProxyPortDialog> {
             autofocus: true,
             readOnly: _saving,
             keyboardType: TextInputType.number,
-            inputFormatters: _portFormatters(),
             decoration: InputDecoration(helperText: _portRange, errorText: _error, errorMaxLines: 3),
             onSubmitted: (_) => _submit(),
           ),

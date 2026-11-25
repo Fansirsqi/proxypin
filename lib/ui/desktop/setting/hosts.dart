@@ -20,6 +20,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/components/manager/hosts_manager.dart';
@@ -87,7 +88,7 @@ class _HostsDialogState extends State<HostsDialog> {
                 isPressed = true;
               }
             },
-            child: AlertDialog(
+            child: FloatingAlertDialog(
                 titlePadding: const EdgeInsets.only(left: 20, top: 10, right: 15),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 15),
                 scrollable: true,
@@ -406,7 +407,7 @@ class FolderDialog extends StatelessWidget {
     bool enabled = folder?.enabled ?? true;
     String name = folder?.host ?? '';
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(localizations.newFolder, style: const TextStyle(fontSize: 16)),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         Row(children: [
@@ -482,7 +483,7 @@ class _HostsEditDialogState extends State<HostsEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FloatingAlertDialog(
         contentPadding: const EdgeInsets.only(left: 20, right: 20, top: 10),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: Text(localizations.cancel)),

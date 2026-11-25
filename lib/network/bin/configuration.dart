@@ -25,8 +25,18 @@ import 'package:proxypin/network/util/system_proxy.dart';
 import 'package:proxypin/utils/platform.dart';
 
 class Configuration {
+  static const minPort = 1;
+  static const maxPort = 65535;
+  static const defaultPort = 9099;
+
   ///代理相关配置
-  int port = 9099;
+  int _port = defaultPort;
+  int get port => _port;
+  set port(int value) => _port = checkPort(value);
+
+  static bool isValidPort(Object? value) => value is int && value >= minPort && value <= maxPort;
+
+  static int checkPort(int value) => RangeError.checkValueInInterval(value, minPort, maxPort, 'port');
 
   //是否启用https抓包
   bool enableSsl = Platforms.isMobile();
@@ -66,24 +76,23 @@ class Configuration {
   Configuration._();
 
   /// 单例
-  static Configuration? _instance;
+  static Future<Configuration>? _instance;
 
-  static Future<Configuration> get instance async {
-    if (_instance == null) {
-      try {
-        var loadConfig = await _loadConfig();
-        _instance = Configuration.fromJson(loadConfig);
-      } catch (e) {
-        logger.e('初始化配置失败', error: e, stackTrace: StackTrace.current);
-        _instance = Configuration._();
-      }
+  static Future<Configuration> get instance => _instance ??= _initialize();
+
+  static Future<Configuration> _initialize() async {
+    try {
+      return Configuration.fromJson(await _loadConfig());
+    } catch (error, stackTrace) {
+      logger.e('初始化配置失败', error: error, stackTrace: stackTrace);
+      return Configuration._();
     }
-    return _instance!;
   }
 
   /// 加载配置
   Configuration.fromJson(Map<String, dynamic> config) {
-    port = config['port'] ?? port;
+    final savedPort = config['port'];
+    if (savedPort is int && isValidPort(savedPort)) _port = savedPort;
     enableSsl = config['enableSsl'] == true;
     startup = config['startup'] ?? Platforms.isDesktop();
     enableSystemProxy = config['enableSystemProxy'] ?? (config['enableDesktop'] ?? true);
@@ -109,18 +118,47 @@ class Configuration {
     return File("${home.path}${separator}config.cnf");
   }
 
+  static Future<void> _pendingSave = Future.value();
+
   /// 刷新配置文件
-  Future<void> flushConfig() async {
+  Future<void> flushConfig() => _enqueueSave(_writeConfig);
+
+  Future<void> savePort(int newPort) async {
+    checkPort(newPort);
+    await _enqueueSave(() async {
+      await _writeConfig(newPort);
+      _port = newPort;
+    });
+  }
+
+  static Future<void> _enqueueSave(Future<void> Function() save) {
+    final result = _pendingSave.then((_) => save());
+    _pendingSave = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> _writeConfig([int? newPort]) async {
+    final settings = toJson();
+    if (newPort != null) settings['port'] = newPort;
+    final json = jsonEncode(settings);
     var file = await configFile();
-    var exists = await file.exists();
-    if (!exists) {
-      file = await file.create(recursive: true);
+    if (await FileSystemEntity.isLink(file.path)) {
+      file = File(await file.resolveSymbolicLinks());
     }
-    HostFilter.whitelist.toJson();
-    HostFilter.blacklist.toJson();
-    var json = jsonEncode(toJson());
-    logger.d('Refresh configuration file $runtimeType ${toJson()}');
-    await file.writeAsString(json);
+    final parent = await file.parent.create(recursive: true);
+    final staging = await parent.createTemp('.config.cnf-');
+    try {
+      final stagedFile = File('${staging.path}${Platform.pathSeparator}config.cnf');
+      await stagedFile.writeAsString(json, flush: true);
+      await stagedFile.rename(file.path);
+      logger.d('Refreshed configuration file $file');
+    } finally {
+      try {
+        await staging.delete(recursive: true);
+      } on FileSystemException catch (error) {
+        logger.w('Could not remove configuration staging directory', error: error);
+      }
+    }
   }
 
   /// 加载配置文件

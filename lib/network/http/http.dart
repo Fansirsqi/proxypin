@@ -15,6 +15,7 @@
  */
 
 import 'dart:convert';
+import 'dart:io' show zlib;
 import 'dart:isolate';
 
 import 'package:proxypin/network/channel/host_port.dart';
@@ -32,6 +33,7 @@ import 'http_headers.dart';
 abstract class HttpMessage {
   /// HTTP/1.1
   static const String http1Version = "HTTP/1.1";
+  static const String _svgMime = "image/svg+xml";
 
   ///内容类型
   static final Map<String, ContentType> contentTypes = {
@@ -41,6 +43,7 @@ abstract class HttpMessage {
     "text/html": ContentType.html,
     "application/xhtml+xml": ContentType.html,
     "image/": ContentType.image,
+    _svgMime: ContentType.xml,
     "+xml": ContentType.xml,
     "application/xml": ContentType.xml,
     "text/xml": ContentType.xml,
@@ -98,10 +101,16 @@ abstract class HttpMessage {
   /// 是否是websocket协议
   bool get isWebSocket => headers.get("Upgrade") == 'websocket';
 
-  ContentType get contentType {
+  String get _mimeType {
     final header = headers.contentType;
     final separator = header.indexOf(';');
-    final mime = (separator == -1 ? header : header.substring(0, separator)).trim().toLowerCase();
+    return (separator == -1 ? header : header.substring(0, separator)).trim().toLowerCase();
+  }
+
+  bool get isSvg => _mimeType == _svgMime;
+
+  ContentType get contentType {
+    final mime = _mimeType;
     return contentTypes[mime] ??
         contentTypes.entries
             .firstWhere((element) => mime.contains(element.key),
@@ -127,7 +136,17 @@ abstract class HttpMessage {
     if (mediaType == null) {
       return 'utf-8';
     }
-    return mediaType.charset ?? MediaType.defaultCharset(mediaType);
+    final specified = mediaType.parameters.entries
+        .where((entry) => entry.key.toLowerCase() == 'charset')
+        .firstOrNull
+        ?.value
+        .toLowerCase();
+    if (specified != null) {
+      return specified.startsWith('"') && specified.endsWith('"') && specified.length >= 2
+          ? specified.substring(1, specified.length - 1)
+          : specified;
+    }
+    return MediaType.defaultCharset(mediaType) ?? (this.contentType == ContentType.xml ? 'utf-8' : null);
   }
 
   ///获取消息
@@ -150,15 +169,7 @@ abstract class HttpMessage {
   static String _decodeBody((List<int>, String?, String?) input) {
     final (body, encoding, charset) = input;
     try {
-      List<int> rawBody = body;
-
-      if (encoding == 'gzip') {
-        rawBody = gzipDecode(body);
-      } else if (encoding == 'br') {
-        rawBody = brDecode(body);
-      } else if (encoding == 'deflate') {
-        rawBody = zlibDecode(body);
-      }
+      final rawBody = _inflateBody(body, encoding) ?? body;
 
       if (charset == 'utf-8' || charset == 'utf8') {
         return utf8.decode(rawBody);
@@ -168,6 +179,36 @@ abstract class HttpMessage {
     } catch (e) {
       return String.fromCharCodes(body);
     }
+  }
+
+  static List<int>? _inflateBody(List<int> bytes, String? encoding) => switch (encoding) {
+        null || '' || 'identity' => bytes,
+        'gzip' => gzipDecode(bytes),
+        'br' => brDecode(bytes),
+        'deflate' => _decodeDeflate(bytes),
+        _ => null,
+      };
+
+  static List<int> _decodeDeflate(List<int> bytes) {
+    try {
+      return zlib.decode(bytes);
+    } on FormatException {
+      return zlibDecode(bytes);
+    }
+  }
+
+  static Future<List<int>?> _inflateBodyInBackground(List<int> bytes, String encoding) => Isolate.run(() {
+        final decoded = _inflateBody(bytes, encoding);
+        return identical(decoded, bytes) ? null : decoded;
+      });
+
+  /// Returns the content bytes without HTTP content encoding or charset conversion.
+  Future<List<int>?> decodeBodyBytes() async {
+    final bytes = body;
+    final encoding = headers.contentEncoding;
+    if (bytes == null || encoding == null || encoding.isEmpty || encoding == 'identity') return bytes;
+    final decoded = encoding == 'zstd' ? await zstdDecode(bytes) : await _inflateBodyInBackground(bytes, encoding);
+    return identical(decoded, bytes) ? null : decoded;
   }
 
   static Future<String> _decodeBodyInBackground((List<int>, String?, String?) input) =>

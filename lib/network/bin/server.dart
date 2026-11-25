@@ -68,31 +68,54 @@ class ProxyServer {
 
   int get port => configuration.port;
 
-  bool _changingPort = false;
+  Future<void> _pendingOperation = Future.value();
+
+  Future<T> _runOperation<T>(Future<T> Function() operation) {
+    final result = _pendingOperation.then((_) => operation());
+    _pendingOperation = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
 
   Future<void> changePort(int newPort) async {
-    RangeError.checkValueInInterval(newPort, 0, 65535, 'port');
-    if (_changingPort) throw StateError('A proxy port change is already in progress');
+    Configuration.checkPort(newPort);
+    await _runOperation(() => _changePort(newPort));
+  }
+
+  Future<void> _changePort(int newPort) async {
     final oldPort = port;
     if (newPort == oldPort) return;
 
-    _changingPort = true;
-    final wasRunning = isRunning;
+    final active = server;
+    if (active == null || !active.isRunning) {
+      await configuration.savePort(newPort);
+      return;
+    }
+
+    final replacement = await _bind(newPort);
+    final updateSystemProxy = configuration.enableSystemProxy && Platforms.isDesktop();
+    final sslSetting = enableSsl;
+    final passDomains = configuration.proxyPassDomains;
     try {
-      if (wasRunning) await stop();
-      configuration.port = newPort;
-      if (wasRunning) await start();
-      await configuration.flushConfig();
+      if (updateSystemProxy) await SystemProxy.updatePort(newPort, sslSetting, passDomains);
+      await configuration.savePort(newPort);
     } catch (_) {
       try {
-        if (port != oldPort && isRunning) await stop();
-      } finally {
-        configuration.port = oldPort;
-        if (wasRunning && !isRunning) await start();
+        if (updateSystemProxy) await SystemProxy.updatePort(oldPort, sslSetting, passDomains);
+      } catch (error, stackTrace) {
+        logger.e('Could not restore the system proxy to port $oldPort', error: error, stackTrace: stackTrace);
       }
+      await _closeListener(replacement);
       rethrow;
-    } finally {
-      _changingPort = false;
+    }
+    server = replacement;
+    await _closeListener(active);
+  }
+
+  Future<void> _closeListener(Server listener) async {
+    try {
+      await listener.stop();
+    } catch (error, stackTrace) {
+      logger.e('Could not close the proxy listener', error: error, stackTrace: stackTrace);
     }
   }
 
@@ -108,7 +131,23 @@ class ProxyServer {
   }
 
   /// 启动代理服务
-  Future<Server> start() async {
+  Future<Server> start() => _runOperation(_start);
+
+  Future<Server> _start() async {
+    if (isRunning) return server!;
+    final listener = await _bind(port);
+    server = listener;
+    try {
+      if (configuration.enableSystemProxy) await _setSystemProxyEnable(true, port);
+    } catch (error, stackTrace) {
+      logger.e('Could not enable the system proxy on port $port', error: error, stackTrace: stackTrace);
+    }
+    CertificateManager.initCAConfig();
+    ClientCertManager.preload();
+    return listener;
+  }
+
+  Future<Server> _bind(int listenPort) async {
     Server server = Server(configuration, listener: CombinedEventListener(listeners));
 
     List<Interceptor> interceptors = [
@@ -132,28 +171,21 @@ class ProxyServer {
       );
     });
 
-    return server.bind(port).then((serverSocket) {
-      logger.i("listen on $port");
-      this.server = server;
-      if (configuration.enableSystemProxy) {
-        setSystemProxyEnable(true);
-      }
-
-      //初始化证书
-      CertificateManager.initCAConfig();
-      ClientCertManager.preload();
-      return server;
-    });
+    await server.bind(listenPort);
+    logger.i("listen on $listenPort");
+    return server;
   }
 
   /// 停止代理服务
-  Future<Server?> stop() async {
+  Future<Server?> stop() => _runOperation(_stop);
+
+  Future<Server?> _stop() async {
     if (!isRunning) {
       return server;
     }
 
     if (configuration.enableSystemProxy) {
-      await setSystemProxyEnable(false);
+      await _setSystemProxyEnable(false, port);
     }
     logger.i("stop on $port");
     await server?.stop();
@@ -161,7 +193,9 @@ class ProxyServer {
   }
 
   /// 设置系统代理
-  Future<void> setSystemProxyEnable(bool enable) async {
+  Future<void> setSystemProxyEnable(bool enable) => _runOperation(() => _setSystemProxyEnable(enable, port));
+
+  Future<void> _setSystemProxyEnable(bool enable, int listenPort) async {
     if (!Platforms.isDesktop()) {
       return;
     }
@@ -172,13 +206,13 @@ class ProxyServer {
       return;
     }
 
-    await SystemProxy.setSystemProxyEnable(port, enable, enableSsl, passDomains: configuration.proxyPassDomains);
+    await SystemProxy.setSystemProxyEnable(listenPort, enable, enableSsl, passDomains: configuration.proxyPassDomains);
   }
 
   /// 重启代理服务
-  Future<void> restart() async {
-    await stop().whenComplete(() => start());
-  }
+  Future<void> restart() => _runOperation(() async {
+        await _stop().whenComplete(_start);
+      });
 
   ///检查是否监听端口 没有监听则启动
   Future<void> retryBind() async {

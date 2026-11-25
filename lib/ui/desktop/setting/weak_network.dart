@@ -9,6 +9,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/network_condition_manager.dart';
 import 'package:proxypin/ui/component/utils.dart';
@@ -80,7 +81,7 @@ class _WeakNetworkDialogState extends State<WeakNetworkDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
+    return FloatingAlertDialog(
       titlePadding: const EdgeInsets.only(left: 24, top: 16, right: 16),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       actionsPadding: const EdgeInsets.only(right: 24, bottom: 16),
@@ -447,7 +448,7 @@ class _RuleEditDialogState extends State<_RuleEditDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final selected = m.findProfile(_profileId) ?? m.defaultProfile;
-    return AlertDialog(
+    return FloatingAlertDialog(
       scrollable: true,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Row(children: [
@@ -661,7 +662,7 @@ class _ProfileEditDialogState extends State<_ProfileEditDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
+    return FloatingAlertDialog(
       scrollable: true,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Row(
@@ -824,7 +825,7 @@ class _ManageProfilesDialogState extends State<_ManageProfilesDialog> {
     // 过滤出所有由用户自建的非系统预设
     final customProfiles = m.allProfiles.where((p) => !p.isBuiltin).toList();
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       titlePadding: const EdgeInsets.only(left: 20, top: 14, right: 14),
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),

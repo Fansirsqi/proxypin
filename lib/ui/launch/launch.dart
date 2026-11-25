@@ -19,6 +19,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/native/vpn.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -138,7 +139,13 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
     if (remember && appConfiguration != null) {
       appConfiguration.windowCloseAction = action;
-      await appConfiguration.flushConfig();
+      try {
+        await appConfiguration.flushConfig();
+      } catch (error) {
+        logger.e('Could not save the window close preference', error: error);
+        if (mounted) FlutterToastr.show(localizations.fail, context, duration: 3);
+        return;
+      }
     }
     if (action == WindowCloseAction.quit) await appExit();
   }
@@ -149,7 +156,7 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
     return showDialog<(WindowCloseAction, bool)>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => FloatingAlertDialog(
           title: Text(strings.trayCloseTitle),
           content: SizedBox(
             width: 360,
@@ -185,13 +192,31 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
     if (_exiting) return;
     _exiting = true;
     logger.d("appExit");
-    await widget.proxyServer.stop();
-    started = false;
-    if (Platforms.isDesktop()) {
-      await DesktopMultiWindow.closeStandaloneWindows();
-      await DesktopTrayManager.instance.exitApp();
-      await windowManager.setPreventClose(false);
-      await windowManager.destroy();
+    try {
+      if (Platform.isLinux) {
+        await AppConfiguration.current?.flushConfigForClose();
+        await DesktopMultiWindow.closeStandaloneWindows();
+      }
+      await widget.proxyServer.stop();
+      started = false;
+      if (Platforms.isDesktop()) {
+        await DesktopTrayManager.instance.exitApp();
+        await windowManager.setPreventClose(false);
+        await windowManager.destroy();
+      }
+    } catch (error, stackTrace) {
+      DesktopMultiWindow.resumeStandaloneWindows();
+      _exiting = false;
+      logger.e('Could not exit the application', error: error, stackTrace: stackTrace);
+      if (Platform.isLinux) {
+        try {
+          if (!await windowManager.isVisible()) await DesktopTrayManager.instance.restoreWindow();
+        } catch (restoreError) {
+          logger.e('Could not restore the main window after a failed exit', error: restoreError);
+        }
+      }
+      if (mounted) FlutterToastr.show(localizations.fail, context, duration: 3);
+      return;
     }
 
     if (!Platform.isWindows && !Platform.isLinux) {
@@ -207,6 +232,10 @@ class _SocketLaunchState extends State<SocketLaunch> with WindowListener, Widget
 
   @override
   Future<AppExitResponse> didRequestAppExit() async {
+    if (Platform.isLinux) {
+      await appExit();
+      return AppExitResponse.cancel;
+    }
     bool isPreventClose = await windowManager.isPreventClose();
     if (!isPreventClose || Platform.isMacOS) {
       await appExit();

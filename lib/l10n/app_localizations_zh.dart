@@ -1613,12 +1613,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get captureListDensitySubtitle => '调整抓包列表中每一行的高度';
 
   @override
-  String get alwaysShowCaptureRowDetails => '始终显示第二行';
+  String get showCaptureRowDetails => '显示请求附加信息';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return '行高低于 $threshold% 时也显示状态、时间和耗时等信息';
-  }
+  String get showCaptureRowDetailsSubtitle => '在抓包列表显示状态、时间和耗时等信息';
 
   @override
   String get densityComfortable => '宽松';
@@ -3105,12 +3103,10 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get captureListDensitySubtitle => '調整封包列表中每一列的高度';
 
   @override
-  String get alwaysShowCaptureRowDetails => '一律顯示第二行';
+  String get showCaptureRowDetails => '顯示請求附加資訊';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return '列高低於 $threshold% 時仍顯示狀態、時間和耗時等資訊';
-  }
+  String get showCaptureRowDetailsSubtitle => '在封包列表顯示狀態、時間和耗時等資訊';
 
   @override
   String get densityComfortable => '寬鬆';

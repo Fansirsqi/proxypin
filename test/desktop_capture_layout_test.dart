@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide DropdownMenu;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -39,6 +40,7 @@ Future<DesktopRequestListState> pumpCaptureList(
   );
   await tester.pumpWidget(MaterialApp(
     locale: locale,
+    theme: ThemeData(fontFamily: configuration?.appFontFamily),
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     builder: (context, child) => MediaQuery(
@@ -74,9 +76,17 @@ class _PortTestConfiguration extends Configuration {
   _PortTestConfiguration() : super.fromJson({'port': 8899});
 
   @override
-  Future<void> flushConfig() async {
-    savedPort = port;
+  Future<void> savePort(int newPort) async {
+    port = newPort;
+    savedPort = newPort;
   }
+}
+
+class _CaptureTestConfiguration extends AppConfiguration {
+  _CaptureTestConfiguration() : super.withConfigFile(File('unused'));
+
+  @override
+  Future<void> writeConfig(Map<String, dynamic> config) async {}
 }
 
 void main() {
@@ -114,12 +124,12 @@ void main() {
     await tester.enterText(find.byType(TextField), '65536');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.bySubtype<AlertDialog>(), findsOneWidget);
     expect(proxy.port, 8899);
     await tester.enterText(find.byType(TextField), '9999');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.bySubtype<AlertDialog>(), findsNothing);
     expect(proxy.port, 9999);
     expect(configuration.savedPort, 9999);
     await openPortDialog(9999);
@@ -204,7 +214,7 @@ void main() {
     final cancelSelection = find.byTooltip(localizations.cancel);
     final toolbar = find.byType(SelectionActionBar);
     final scrollbar = find.ancestor(of: toolbar, matching: find.byType(Scrollbar));
-    final dialog = find.byType(AlertDialog);
+    final dialog = find.bySubtype<AlertDialog>();
 
     Future<void> selectAndRevealActions() async {
       await tester.tap(selectedRow, buttons: kSecondaryMouseButton, kind: mouse);
@@ -269,24 +279,149 @@ void main() {
     final row = find.byType(RequestWidget);
     final headerHitArea = find.ancestor(of: header, matching: find.byType(InkWell)).first;
     final sizes = <(double, double)>[];
-    for (final density in [300.0, 100.0, 86.0, 80.0, 60.0, 25.0]) {
+    for (final density in [120.0, 110.0, 100.0, 86.0, 80.0, 60.0, 25.0, 5.0]) {
       configuration.captureListDensity = density;
-      configuration.globalChange.value = !configuration.globalChange.value;
       await tester.pumpAndSettle();
       sizes.add((tester.getSize(headerHitArea).height, tester.getSize(row).height));
+      expect(tester.getTopLeft(row).dy, closeTo(tester.getBottomLeft(headerHitArea).dy, 0.01));
     }
-    expect(sizes.sublist(1, 5).map((size) => size.$1), [40, 34.4, 32, 24]);
+    expect(sizes.map((size) => size.$1), [48, 44, 40, 34.4, 32, 24, 10, 2]);
     for (var index = 1; index < sizes.length; index++) {
       expect(sizes[index - 1].$1, greaterThan(sizes[index].$1));
       expect(sizes[index - 1].$2, greaterThan(sizes[index].$2));
     }
     expect(tester.getSize(image).height, lessThanOrEqualTo(configuration.captureRowMetrics.imageSize));
 
+    configuration.captureListDensity = 100;
+    await tester.pumpAndSettle();
     await tester.tap(row, buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
     final localizations = AppLocalizations.of(tester.element(row))!;
     expect(find.text(localizations.copyCurl), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('font size previews update domain, request, and detail text at the selected row height', (tester) async {
+    final configuration = AppConfiguration.withConfigFile(File('unused'))
+      ..captureListDensity = 80
+      ..appFontFamily = 'Capture UI Font'
+      ..editorFontFamily = 'Capture Editor Font'
+      ..editorFontSize = 28;
+    final request = sampleRequest('typography');
+    await pumpCaptureList(tester, width: 320, configuration: configuration, requests: [request]);
+    final header = find.text(request.remoteDomain()!);
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+
+    final row = find.byType(RequestWidget);
+    final rowTexts = find.descendant(of: row, matching: find.byType(Text));
+    final headerHitArea = find.ancestor(of: header, matching: find.byType(InkWell)).first;
+    final headerStyle = tester.renderObject<RenderParagraph>(header).text.style;
+    final requestStyle = tester.renderObject<RenderParagraph>(rowTexts.first).text.style;
+    expect(headerStyle?.fontFamily, configuration.appFontFamily);
+    expect(headerStyle?.fontFamily, requestStyle?.fontFamily);
+    expect(headerStyle?.fontWeight, requestStyle?.fontWeight);
+    expect(headerStyle?.height, requestStyle?.height);
+    for (final scale in [0.6, 1.0, 1.2]) {
+      configuration.setDisplayDensity(DisplayDensitySetting.fontSize, scale * 100, commit: false);
+      await tester.pump();
+      expect(configuration.captureListDensity, 80);
+      expect(configuration.showCaptureRowDetails, isTrue);
+      expect(tester.widget<Text>(header).style?.fontSize, closeTo(13 * 0.8 * scale, 0.01));
+      final sizes =
+          tester.widgetList<Text>(rowTexts).map((text) => text.style?.fontSize ?? text.textSpan?.style?.fontSize);
+      expect(sizes, [closeTo(13 * 0.8 * scale, 0.01), closeTo(11 * 0.8 * scale, 0.01)]);
+      expect(tester.getTopLeft(row).dy, closeTo(tester.getBottomLeft(headerHitArea).dy, 0.01));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an expanded domain mounts viewport rows and keeps scroll and expansion across tabs and zoom',
+      (tester) async {
+    final configuration = AppConfiguration.withConfigFile(File('unused'));
+    final requests = List.generate(4000, (index) => sampleRequest('request-$index'));
+    final state = await pumpCaptureList(tester, width: 400, requests: requests, configuration: configuration);
+    final domains = find.byKey(state.domainListKey);
+    final domainHeader = find.text(requests.first.remoteDomain()!);
+    final rows = find.descendant(of: domains, matching: find.byType(RequestWidget, skipOffstage: false));
+    final scrollable = find.descendant(of: domains, matching: find.byType(Scrollable));
+
+    expect(rows, findsNothing);
+    await tester.tap(domainHeader);
+    await tester.pumpAndSettle();
+    final mounted = <double, int>{};
+    for (final density in [100.0, 5.0, 25.0, 110.0, 120.0, 100.0]) {
+      configuration.setDisplayDensity(DisplayDensitySetting.captureList, density, commit: false);
+      await tester.pumpAndSettle();
+      mounted[density] = rows.evaluate().length;
+      expect(mounted[density], inInclusiveRange(1, density == 5 ? 500 : 100));
+    }
+    debugPrint('Mounted domain rows out of 4000: $mounted');
+
+    final position = tester.state<ScrollableState>(scrollable).position;
+    await tester.drag(scrollable, const Offset(0, -1400));
+    await tester.pumpAndSettle();
+    final pixels = position.pixels;
+    expect(pixels, greaterThan(1000));
+    expect(domainHeader, findsNothing);
+    expect(rows.evaluate().length, inInclusiveRange(1, 100));
+
+    configuration.setDisplayDensity(DisplayDensitySetting.captureList, 85, commit: false);
+    await tester.pumpAndSettle();
+    expect(position.pixels, closeTo(pixels, 1));
+    final localizations = AppLocalizations.of(state.context)!;
+    await tester.tap(find.text(localizations.captureRequests));
+    await tester.pumpAndSettle();
+    final timeRows = find.descendant(of: find.byType(RequestSequence), matching: find.byType(RequestWidget));
+    expect(timeRows.evaluate().length, inInclusiveRange(1, 100));
+    final chronological = timeRows.hitTestable().first;
+    final initialHeight = tester.getSize(chronological).height;
+    configuration.setDisplayDensity(DisplayDensitySetting.captureList, 25, commit: false);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(timeRows.hitTestable().first).height, lessThan(initialHeight));
+
+    await tester.tap(find.text(localizations.captureDomains));
+    await tester.pumpAndSettle();
+    expect(position.pixels, closeTo(pixels, 1));
+    final requestRow = rows.hitTestable().first;
+    await tester.tap(requestRow, buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(find.text(localizations.copyCurl), findsOneWidget);
+  });
+
+  testWidgets('capture menu toggles the extra request details preference across row heights', (tester) async {
+    final config = _CaptureTestConfiguration();
+    final request = sampleRequest('extra-details', type: 'application/json');
+    final state = await pumpCaptureList(tester, width: 360, requests: [request], configuration: config);
+    final labels = AppLocalizations.of(state.context)!;
+    await tester.tap(find.text(labels.captureRequests));
+    await tester.pumpAndSettle();
+    final details = find.textContaining('[200]', findRichText: true);
+    expect(details, findsOneWidget);
+
+    final menuItem = find.ancestor(
+      of: find.text(labels.showCaptureRowDetails),
+      matching: find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem),
+    );
+    Future<CheckedPopupMenuItem<dynamic>> openMenu() async {
+      await tester.tap(find.byIcon(Icons.more_vert_outlined));
+      await tester.pumpAndSettle();
+      return tester.widget(menuItem);
+    }
+
+    expect((await openMenu()).checked, isTrue);
+    await tester.tap(menuItem);
+    await tester.pumpAndSettle();
+    expect(config.showCaptureRowDetails, isFalse);
+    expect(details, findsNothing);
+
+    config.setDisplayDensity(DisplayDensitySetting.captureList, 5, commit: false);
+    await tester.pumpAndSettle();
+    expect((await openMenu()).checked, isFalse);
+    await tester.tap(menuItem);
+    await tester.pumpAndSettle();
+    expect(config.showCaptureRowDetails, isTrue);
+    expect(details, findsOneWidget);
   });
 
   testWidgets('top search filters both tabs and keeps conditions and Escape available', (tester) async {

@@ -17,6 +17,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/client_cert_manager.dart';
 import 'package:proxypin/network/util/cert/cert_data.dart';
@@ -71,7 +72,7 @@ class _ClientCertDialogState extends State<ClientCertDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FloatingAlertDialog(
       titlePadding: const EdgeInsets.only(left: 20, top: 10, right: 15),
       contentPadding: const EdgeInsets.symmetric(horizontal: 15),
       scrollable: true,
@@ -263,7 +264,7 @@ class _ClientCertDialogState extends State<ClientCertDialog> {
     try {
       final result = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => FloatingAlertDialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
           contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
@@ -341,7 +342,7 @@ class _ClientCertDialogState extends State<ClientCertDialog> {
     try {
       final result = await showDialog<bool>(
         context: context,
-        builder: (ctx) => AlertDialog(
+        builder: (ctx) => FloatingAlertDialog(
           insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
           contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 12),

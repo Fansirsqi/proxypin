@@ -15,7 +15,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:proxypin/network/bin/server.dart';
+import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -23,11 +23,9 @@ import 'package:proxypin/ui/desktop/setting/setting.dart';
 
 class LeftNavigationBar extends StatefulWidget {
   final AppConfiguration appConfiguration;
-  final ProxyServer proxyServer;
   final ValueNotifier<int> selectIndex;
 
-  const LeftNavigationBar(
-      {super.key, required this.appConfiguration, required this.proxyServer, required this.selectIndex});
+  const LeftNavigationBar({super.key, required this.appConfiguration, required this.selectIndex});
 
   @override
   State<StatefulWidget> createState() => _LeftNavigationBarState();
@@ -96,12 +94,10 @@ class _LeftNavigationBarState extends State<LeftNavigationBar> {
                               icon: (color) => SvgIcon('gear', color: color),
                               label: localizations.setting,
                               expanded: false,
-                              onTap: () => showDialog<void>(
-                                context: context,
-                                builder: (_) => Setting(
-                                  proxyServer: widget.proxyServer,
-                                  appConfiguration: widget.appConfiguration,
-                                ),
+                              onTap: () => MultiWindow.openToolWindow(
+                                localizations.setting,
+                                Setting.windowName,
+                                size: const Size(740, 700),
                               ),
                             ),
                           ),

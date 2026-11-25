@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/ui/component/search/search_controller.dart';
 
 import '../../../utils/platform.dart';
@@ -24,6 +25,7 @@ class _SearchFieldState extends State<SearchField> {
   final FocusNode focusNode = FocusNode();
   final RxBool caseSensitive = RxBool(false);
   final RxBool isRegExp = RxBool(false);
+  late Listenable _status;
 
   @override
   initState() {
@@ -33,10 +35,35 @@ class _SearchFieldState extends State<SearchField> {
     }
     caseSensitive.value = widget.searchController.value.isCaseSensitive;
     isRegExp.value = widget.searchController.value.isRegExp;
+    _listenToStatus();
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchController == widget.searchController) return;
+    _status.removeListener(_refreshStatus);
+    _listenToStatus();
+  }
+
+  void _listenToStatus() {
+    final controller = widget.searchController;
+    _status = Listenable.merge([
+      controller,
+      controller.totalMatchCount,
+      controller.currentMatchIndex,
+      controller.searchFailed,
+    ])
+      ..addListener(_refreshStatus);
+  }
+
+  void _refreshStatus() {
+    if (widget.searchController.isSearchOverlayVisible) setState(() {});
   }
 
   @override
   dispose() {
+    _status.removeListener(_refreshStatus);
     focusNode.dispose();
     super.dispose();
   }
@@ -91,7 +118,7 @@ class _SearchFieldState extends State<SearchField> {
                     })),
               ),
             ),
-            if (Platforms.isDesktop()) Obx(() => SizedBox(width: 85, child: _getText())),
+            if (Platforms.isDesktop()) SizedBox(width: 85, child: _getText()),
             if (Platforms.isMobile()) SizedBox(width: 10),
             // InkWell + 圆角水波纹（有 Material 祖先可画 ink）；总宽与旧版持平（19+6+19=44），
             // 搜索框是定宽 Row，换 IconButton 会被强制最小尺寸撑溢出
@@ -131,6 +158,9 @@ class _SearchFieldState extends State<SearchField> {
   }
 
   Text _getText() {
+    if (widget.searchController.searchFailed.value) {
+      return Text(AppLocalizations.of(context)?.statusStopped ?? 'Stopped', textAlign: TextAlign.center);
+    }
     if (widget.searchController.totalMatchCount.value == 0) {
       return Text("0 results",
           textAlign: TextAlign.center,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
@@ -411,7 +412,7 @@ class _InterceptRuleDialogState extends State<InterceptRuleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(
           widget.rule == null
               ? "${localizations.add} ${localizations.breakpointRule}"

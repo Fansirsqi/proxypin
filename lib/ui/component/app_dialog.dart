@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:toastification/toastification.dart';
 
 class AppAlertDialog extends StatelessWidget {
@@ -28,7 +29,7 @@ class AppAlertDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = MaterialLocalizations.of(context);
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: title != null ? Text(title!) : null,
       content: SingleChildScrollView(
         child: SizedBox(

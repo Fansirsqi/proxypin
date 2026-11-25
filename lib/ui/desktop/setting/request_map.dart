@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
@@ -510,7 +511,7 @@ class _RequestMapEditState extends State<RequestMapEdit> {
     GlobalKey formKey = GlobalKey<FormState>();
     bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
-    return AlertDialog(
+    return FloatingAlertDialog(
         scrollable: true,
         titlePadding: const EdgeInsets.only(top: 10, left: 20),
         actionsPadding: const EdgeInsets.only(right: 15, bottom: 15),

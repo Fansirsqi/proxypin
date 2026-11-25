@@ -1626,12 +1626,10 @@ class AppLocalizationsId extends AppLocalizations {
   String get captureListDensitySubtitle => 'Atur tinggi baris dalam daftar tangkapan';
 
   @override
-  String get alwaysShowCaptureRowDetails => 'Selalu tampilkan baris kedua';
+  String get showCaptureRowDetails => 'Tampilkan detail permintaan';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return 'Tampilkan status, waktu, dan durasi meski di bawah $threshold%';
-  }
+  String get showCaptureRowDetailsSubtitle => 'Tampilkan status, waktu, dan durasi dalam daftar tangkapan';
 
   @override
   String get densityComfortable => 'Longgar';

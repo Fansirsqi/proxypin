@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/state_component.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/utils/keyword_highlight.dart';
@@ -26,7 +27,7 @@ class _KeywordHighlightState extends State<DesktopKeywordHighlight> {
 
     Map<Color, String> map = Map.of(KeywordHighlights.keywords);
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: ListTile(
           title: Text(localizations.keyword + localizations.highlight,
               textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500))),

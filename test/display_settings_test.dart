@@ -7,6 +7,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
+import 'package:proxypin/main.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/http/http.dart';
@@ -25,29 +26,20 @@ class _RecordingConfiguration extends AppConfiguration {
   _RecordingConfiguration() : super.withConfigFile(File('unused'));
 
   final writes = <Map<String, dynamic>>[];
+  int themeComputations = 0;
 
   @override
   Future<void> writeConfig(Map<String, dynamic> config) async => writes.add(config);
+
+  @override
+  ColorScheme colorScheme(Brightness brightness) {
+    themeComputations++;
+    return super.colorScheme(brightness);
+  }
 }
 
-Widget _settings(AppConfiguration config, Widget child) => ValueListenableBuilder(
-      valueListenable: config.globalChange,
-      builder: (_, __, ___) => MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: _theme(config, Brightness.light),
-        darkTheme: _theme(config, Brightness.dark),
-        themeMode: config.themeMode,
-        home: Scaffold(body: AppDisplaySettings(configuration: config, child: child)),
-      ),
-    );
-
-ThemeData _theme(AppConfiguration config, Brightness brightness) => ThemeData(
-      colorScheme: config.colorScheme(brightness),
-      visualDensity: config.visualDensity,
-      extensions: [ActiveThemePreset(config.themePreset)],
-    );
+Widget _settings(AppConfiguration config, Widget child) =>
+    FluentApp(Scaffold(body: child), config, resizeBorder: false);
 
 double _contrast(Color foreground, Color background) {
   final values = [foreground.computeLuminance(), background.computeLuminance()]..sort();
@@ -81,34 +73,52 @@ void main() {
   });
 
   for (final setting in DisplayDensitySetting.values) {
-    final interface = setting == DisplayDensitySetting.interface;
-    final densityKey = interface ? 'uiDensity' : 'captureListDensity';
-    final otherKey = interface ? 'captureListDensity' : 'uiDensity';
+    final densityKey = switch (setting) {
+      DisplayDensitySetting.fontSize => 'appFontScale',
+      DisplayDensitySetting.interface => 'uiDensity',
+      DisplayDensitySetting.captureList => 'captureListDensity',
+    };
+    final tile = switch (setting) {
+      DisplayDensitySetting.fontSize => const AppFontScaleTile(titleStyle: TextStyle(fontSize: 14)),
+      DisplayDensitySetting.interface => const UiDensityTile(),
+      DisplayDensitySetting.captureList => const CaptureDensityTile(),
+    };
 
     testWidgets('$densityKey previews during drag and commits on release', (tester) async {
       final config = _RecordingConfiguration();
       addTearDown(config.globalChange.dispose);
-      double density() => interface ? config.uiDensity : config.captureListDensity;
-      double spacing() => interface ? config.visualDensity.vertical : config.captureRowMetrics.top;
+      final minimum = setting == DisplayDensitySetting.fontSize ? 60.0 : 5.0;
+      double density() => switch (setting) {
+            DisplayDensitySetting.fontSize => config.appFontScale * 100,
+            DisplayDensitySetting.interface => config.uiDensity,
+            DisplayDensitySetting.captureList => config.captureListDensity,
+          };
+      double spacing() => switch (setting) {
+            DisplayDensitySetting.fontSize =>
+              Theme.of(tester.element(find.byType(Slider))).textTheme.bodyMedium!.fontSize!,
+            DisplayDensitySetting.interface => config.visualDensity.vertical,
+            DisplayDensitySetting.captureList => config.captureRowMetrics.top,
+          };
+      double persist(double percent) => setting == DisplayDensitySetting.fontSize ? percent / 100 : percent;
       await tester.pumpWidget(_settings(
         config,
         Column(children: [
-          SizedBox(width: 328, child: interface ? const UiDensityTile() : const CaptureDensityTile()),
+          SizedBox(width: 328, child: tile),
         ]),
       ));
       await tester.pumpAndSettle();
       final slider = find.byType(Slider);
       final bounds = tester.getRect(slider);
       expect(bounds.width, 328);
-      expect(tester.widget<Slider>(slider).min, 25);
-      expect(tester.widget<Slider>(slider).max, 300);
+      expect(tester.widget<Slider>(slider).min, minimum);
+      expect(tester.widget<Slider>(slider).max, 120);
       expect(tester.widget<Slider>(slider).divisions, isNull);
-      final gesture = await tester.startGesture(bounds.centerLeft + Offset(bounds.width * .28, 0));
-      await gesture.moveTo(bounds.centerLeft + Offset(bounds.width * .22, 0));
+      final gesture = await tester.startGesture(bounds.centerLeft + const Offset(57, 0));
+      await gesture.moveTo(bounds.centerLeft + const Offset(43, 0));
       await tester.pump();
       final firstDensity = density();
       final firstSpacing = spacing();
-      expect(firstDensity, inExclusiveRange(60, 100));
+      expect(firstDensity, inExclusiveRange(minimum, 100));
       expect(config.writes, isEmpty);
       await gesture.moveBy(const Offset(-4, 0));
       await tester.pump();
@@ -116,25 +126,25 @@ void main() {
       expect(spacing(), lessThan(firstSpacing));
       await gesture.moveTo(bounds.centerLeft);
       await tester.pumpAndSettle();
-      expect(density(), 25);
-      expect(find.text('25%'), findsOneWidget);
+      expect(density(), minimum);
+      expect(find.text('${minimum.round()}%'), findsOneWidget);
 
-      config.applyDisplaySetting(() => config.appFontScale = 1.1);
+      config.applyDisplaySetting(() => config.editorFontSize = 14);
       await tester.pump();
-      expect(config.writes.single[densityKey], 100);
-      expect(config.writes.single['appFontScale'], 1.1);
+      expect(tester.takeException(), isNull);
+      expect(config.writes.single[densityKey], persist(100));
+      expect(config.writes.single['editorFontSize'], 14);
 
       await gesture.up();
       await tester.pumpAndSettle();
       expect(config.writes, hasLength(2));
-      expect(config.writes.last[densityKey], 25);
-      expect(config.writes.last[otherKey], 100);
+      expect(config.writes.last[densityKey], persist(minimum));
 
-      await tester.tapAt(bounds.centerRight - const Offset(2, 0));
+      await tester.tapAt(tester.getRect(slider).centerRight - const Offset(2, 0));
       await tester.pumpAndSettle();
-      expect(density(), 300);
+      expect(density(), 120);
       expect(spacing(), greaterThan(firstSpacing));
-      expect(config.writes.last[densityKey], 300);
+      expect(config.writes.last[densityKey], persist(120));
     });
   }
 
@@ -161,10 +171,10 @@ void main() {
     await tester.pumpAndSettle();
     final bounds = tester.getRect(uiSlider);
     final gesture = await tester.startGesture(
-      bounds.centerLeft + Offset(bounds.width * .28, 0),
+      bounds.centerLeft + Offset(bounds.width * .12, 0),
       kind: PointerDeviceKind.mouse,
     );
-    await gesture.moveTo(bounds.centerLeft + Offset(bounds.width * .22, 0));
+    await gesture.moveTo(bounds.centerLeft + Offset(bounds.width * .08, 0));
     await gesture.moveBy(const Offset(-4, 0));
     await tester.pumpAndSettle();
     expect(config.uiDensity, lessThan(100));
@@ -172,11 +182,108 @@ void main() {
     expect(tester.getRect(uiSlider), bounds);
     await gesture.moveTo(bounds.centerLeft);
     await tester.pumpAndSettle();
-    expect(config.uiDensity, 25);
+    expect(config.uiDensity, 5);
     expect(tester.getRect(uiSlider), bounds);
     await gesture.up();
     await tester.pumpAndSettle();
-    expect(config.writes.single['uiDensity'], 25);
+    expect(config.writes.single['uiDensity'], 5);
+
+    final captureSlider = find.descendant(of: find.byType(CaptureDensityTile), matching: find.byType(Slider));
+    await tester.ensureVisible(captureSlider);
+    await tester.pumpAndSettle();
+    final captureBounds = tester.getRect(captureSlider);
+    final captureGesture = await tester.startGesture(
+      captureBounds.centerLeft + Offset(captureBounds.width * .28, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    final interfaceSpacing = workspaceSpacing;
+    await captureGesture.moveTo(captureBounds.centerLeft);
+    await tester.pumpAndSettle();
+    expect(config.captureListDensity, 5);
+    expect(workspaceSpacing, interfaceSpacing);
+    expect(tester.getRect(captureSlider), captureBounds);
+    expect(config.writes, hasLength(1));
+    await captureGesture.up();
+    await tester.pumpAndSettle();
+    expect(config.writes.last['captureListDensity'], 5);
+
+    final fontSlider = find.descendant(of: find.byType(AppFontScaleTile), matching: find.byType(Slider));
+    await tester.ensureVisible(fontSlider);
+    await tester.pumpAndSettle();
+    final fontBounds = tester.getRect(fontSlider);
+    final fontGesture = await tester.startGesture(fontBounds.center, kind: PointerDeviceKind.mouse);
+    await fontGesture.moveTo(fontBounds.centerRight - const Offset(2, 0));
+    await tester.pumpAndSettle();
+    expect(config.appFontScale, 1.2);
+    expect(tester.getRect(fontSlider), fontBounds);
+    expect(tester.takeException(), isNull);
+    await fontGesture.up();
+    await tester.pumpAndSettle();
+    expect(config.writes.last['appFontScale'], 1.2);
+  });
+
+  testWidgets('density previews reach their dependents with zero root rebuilds and theme computations', (tester) async {
+    final config = _RecordingConfiguration();
+    addTearDown(config.globalChange.dispose);
+    var appBuilds = 0;
+    var themeBuilds = 0;
+    var configBuilds = 0;
+    var captureBuilds = 0;
+    await tester.pumpWidget(_settings(
+      config,
+      Column(children: [
+        const UiDensityTile(),
+        const CaptureDensityTile(),
+        Builder(builder: (context) {
+          themeBuilds++;
+          Theme.of(context);
+          return const SizedBox.shrink();
+        }),
+        Builder(builder: (context) {
+          configBuilds++;
+          AppDisplaySettings.of(context);
+          return const SizedBox.shrink();
+        }),
+        Builder(builder: (context) {
+          captureBuilds++;
+          AppDisplaySettings.captureOf(context);
+          return const SizedBox.shrink();
+        }),
+      ]),
+    ));
+    await tester.pumpAndSettle();
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    final previousHook = debugOnRebuildDirtyWidget;
+    debugOnRebuildDirtyWidget = (element, builtOnce) {
+      if (element.widget is MaterialApp) appBuilds++;
+      previousHook?.call(element, builtOnce);
+    };
+    addTearDown(() => debugOnRebuildDirtyWidget = previousHook);
+    final initial = (themeBuilds, configBuilds, captureBuilds, config.themeComputations);
+    for (final density in [25.0, 39.9, 40.0, 80.0, 100.0, 105.0, 110.0, 120.0]) {
+      config.setDisplayDensity(DisplayDensitySetting.captureList, density, commit: false);
+      await tester.pump();
+    }
+    expect((appBuilds, themeBuilds, configBuilds, captureBuilds, config.themeComputations),
+        (0, initial.$1, initial.$2, initial.$3 + 8, initial.$4));
+    for (final density in [5.0, 80.0, 120.0]) {
+      config.setDisplayDensity(DisplayDensitySetting.interface, density, commit: false);
+      await tester.pump();
+    }
+    expect((appBuilds, themeBuilds, configBuilds, captureBuilds, config.themeComputations),
+        (0, initial.$1 + 3, initial.$2, initial.$3 + 8, initial.$4));
+    debugPrint('Density previews: MaterialApp builds=$appBuilds, theme computations='
+        '${config.themeComputations - initial.$4}, '
+        'Theme.of builds=${themeBuilds - initial.$1}, capture builds=${captureBuilds - initial.$3}, '
+        'general settings builds=${configBuilds - initial.$2}');
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)), same(app));
+    expect(config.writes, isEmpty);
+
+    config.applyThemeSettings({'mode': 'dark', 'themeColor': 'Green'});
+    await tester.pumpAndSettle();
+    expect(appBuilds, greaterThan(0));
+    expect(config.themeComputations, initial.$4 + 2);
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.dark);
   });
 
   testWidgets('density sliders support keyboard and localized semantic adjustments', (tester) async {
@@ -213,7 +320,7 @@ void main() {
     }
   });
 
-  testWidgets('compact capture rows hide details on both layouts until the override is enabled', (tester) async {
+  testWidgets('capture details visibility is independent of row height on both layouts', (tester) async {
     final config = _RecordingConfiguration()..captureListDensity = 40;
     addTearDown(config.globalChange.dispose);
     final request = HttpRequest(HttpMethod.get, 'https://example.test/a/long/path/for/a/narrow/capture/pane');
@@ -231,12 +338,16 @@ void main() {
               const CaptureDensityTile(),
               RequestWidget(request,
                   proxyServer: proxy, index: 1, multiSelectController: selection, selectionHandlers: handlers),
-              mobile.RequestRow(
-                  request: request,
-                  proxyServer: proxy,
-                  index: 1,
-                  selectionController: selection,
-                  selectionHandlers: handlers),
+              AppDisplaySettings(
+                configuration: config,
+                includeCaptureChanges: true,
+                child: mobile.RequestRow(
+                    request: request,
+                    proxyServer: proxy,
+                    index: 1,
+                    selectionController: selection,
+                    selectionHandlers: handlers),
+              ),
             ],
           ),
         ),
@@ -249,12 +360,11 @@ void main() {
     );
     final toggle = find.byType(SwitchListTile);
     expect(details, findsNWidgets(2));
-    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
 
     config.setDisplayDensity(DisplayDensitySetting.captureList, 39.9, commit: false);
     await tester.pumpAndSettle();
-    expect(details, findsNothing);
-    expect(find.text('39%'), findsOneWidget);
+    expect(details, findsNWidgets(2));
     expect(tester.widgetList<Text>(titles).map((title) => title.maxLines), [1, 1]);
     expect(config.writes, isEmpty);
 
@@ -262,52 +372,61 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(details, findsNWidgets(2));
+    expect(details, findsNothing);
     expect(tester.widgetList<Text>(titles).map((title) => title.maxLines), [1, 1]);
-    expect(config.writes.last['alwaysShowCaptureRowDetails'], isTrue);
+    expect(config.writes.last['showCaptureRowDetails'], isFalse);
+
+    config.setDisplayDensity(DisplayDensitySetting.captureList, 100, commit: false);
+    await tester.pumpAndSettle();
+    expect(details, findsNothing);
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
-    expect(details, findsNothing);
-    expect(config.writes.last['alwaysShowCaptureRowDetails'], isFalse);
+    expect(details, findsNWidgets(2));
+    expect(config.writes.last['showCaptureRowDetails'], isTrue);
   });
 
   test('display preferences round-trip through the existing config fields', () async {
     final directory = await Directory.systemTemp.createTemp('proxypin-display-settings-');
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/ui_config.json');
-    await file.writeAsString(jsonEncode({'uiDensity': 'compact', 'captureListDensity': 'dense'}));
+    await file.writeAsString(jsonEncode({'uiDensity': 'compact', 'captureListDensity': 'dense', 'appFontScale': 9.99}));
     final configuration = AppConfiguration.withConfigFile(file);
     await configuration.initConfig();
     expect(configuration.uiDensity, 80);
     expect(configuration.captureListDensity, 60);
-    expect(configuration.alwaysShowCaptureRowDetails, isFalse);
+    expect(configuration.appFontScale, 1.2);
+    expect(configuration.showCaptureRowDetails, isTrue);
     expect(configuration.editorColorScheme, EditorColorScheme.followTheme);
 
     configuration.applyDisplaySetting(() {
       configuration.editorColorScheme = EditorColorScheme.catppuccinMocha;
-      configuration.uiDensity = 212.5;
+      configuration.uiDensity = 112.5;
       configuration.captureListDensity = 38.25;
-      configuration.alwaysShowCaptureRowDetails = true;
+      configuration.showCaptureRowDetails = true;
+      configuration.appFontScale = 1.15;
     });
     await configuration.flushConfig();
     final restored = AppConfiguration.withConfigFile(file);
     await restored.initConfig();
-    expect(restored.uiDensity, 212.5);
+    expect(restored.uiDensity, 112.5);
     expect(restored.captureListDensity, 38.25);
-    expect(restored.alwaysShowCaptureRowDetails, isTrue);
+    expect(restored.showCaptureRowDetails, isTrue);
+    expect(restored.appFontScale, 1.15);
     expect(restored.editorColorScheme, EditorColorScheme.catppuccinMocha);
 
     await file.writeAsString(jsonEncode({
       'editorColorScheme': 'unknown',
-      'uiDensity': 400,
-      'captureListDensity': 10,
+      'uiDensity': 1000,
+      'captureListDensity': 1,
+      'appFontScale': 0.01,
     }));
     await restored.initConfig();
     expect(restored.editorColorScheme, EditorColorScheme.followTheme);
-    expect(restored.uiDensity, 300);
-    expect(restored.captureListDensity, 25);
-    expect(restored.alwaysShowCaptureRowDetails, isFalse);
+    expect(restored.uiDensity, 120);
+    expect(restored.captureListDensity, 5);
+    expect(restored.appFontScale, .60);
+    expect(restored.showCaptureRowDetails, isFalse);
   });
 
   testWidgets('editor palettes update live and fixed schemes keep contrast across app themes', (tester) async {

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:highlight/highlight.dart' show Node, highlight;
 import 'package:proxypin/ui/component/theme_presets.dart';
 
 import 'search_controller.dart';
+
+export 'preview_task.dart' show PreviewTask;
 
 typedef HighlightDocumentInput = ({
   String text,
@@ -13,14 +16,40 @@ typedef HighlightDocumentInput = ({
   SearchSettings? search,
 });
 
+bool revealHighlightOffset(BuildContext context, int offset) {
+  if (!context.mounted) return false;
+  RenderParagraph? findParagraph(RenderObject? object) {
+    if (object is RenderParagraph) return object;
+    RenderParagraph? result;
+    object?.visitChildren((child) => result ??= findParagraph(child));
+    return result;
+  }
+
+  final paragraph = findParagraph(context.findRenderObject());
+  if (paragraph == null || !paragraph.attached || !paragraph.hasSize) return false;
+  final viewport = RenderAbstractViewport.maybeOf(paragraph);
+  final scroll = Scrollable.maybeOf(context)?.position;
+  if (viewport == null || scroll == null || !scroll.hasContentDimensions) return false;
+
+  final position = TextPosition(offset: offset);
+  final caret = paragraph.getOffsetForCaret(position, Rect.zero);
+  final range = Rect.fromLTWH(caret.dx, caret.dy, 1, paragraph.getFullHeightForCaret(position));
+  final visible = viewport.paintBounds;
+  final laidOut = MatrixUtils.transformRect(paragraph.getTransformTo(viewport), range);
+  if (laidOut.top < visible.top || laidOut.bottom > visible.bottom) {
+    final target =
+        (scroll.pixels + laidOut.center.dy - visible.center.dy).clamp(scroll.minScrollExtent, scroll.maxScrollExtent);
+    if (target != scroll.pixels) scroll.jumpTo(target);
+  }
+  return true;
+}
+
 class HighlightTextDocument {
   final String text;
   final TextStyle? rootStyle;
   final List<HighlightStyledSegment> segments;
   final List<HighlightSearchMatch> matches;
   final List<HighlightDocumentLine> lines;
-  final List<List<HighlightSearchMatch>> lineMatches;
-  final List<int> matchLineIndexes;
   final int currentMatchIndex;
 
   const HighlightTextDocument._({
@@ -29,8 +58,6 @@ class HighlightTextDocument {
     required this.segments,
     required this.matches,
     required this.lines,
-    required this.lineMatches,
-    required this.matchLineIndexes,
     required this.currentMatchIndex,
   });
 
@@ -56,31 +83,62 @@ class HighlightTextDocument {
     final rootStyle = _stripBackground(defaultStyle.merge(input.style));
     final baseStyle = input.preset == ThemePreset.custom ? input.style : rootStyle;
     final segments = _buildHighlightBaseSegments(input.text, input.language, baseStyle, theme);
-    final matches = _buildSearchMatches(input.text, input.search);
-    final lines = buildHighlightDocumentLines(segments);
-    final groupedMatches = _groupMatchesByLine(lines, matches);
-    final currentMatchIndex = matches.isEmpty ? -1 : input.search!.currentMatchIndex.clamp(0, matches.length - 1);
-    final matchLineIndexes = _buildMatchLineIndexes(groupedMatches, matches.length);
-
-    return HighlightTextDocument._(
+    final document = HighlightTextDocument._(
       text: input.text,
       rootStyle: rootStyle,
       segments: segments,
-      matches: matches,
-      lines: lines,
-      lineMatches: groupedMatches,
-      matchLineIndexes: matchLineIndexes,
-      currentMatchIndex: currentMatchIndex,
+      matches: const [],
+      lines: buildHighlightDocumentLines(segments),
+      currentMatchIndex: -1,
     );
+    final search = input.search;
+    return search == null
+        ? document
+        : document.withMatches(findHighlightMatches((input.text, search)), search.currentMatchIndex);
   }
+
+  HighlightTextDocument withMatches(List<HighlightSearchMatch> matches, [int currentMatch = 0]) =>
+      HighlightTextDocument._(
+        text: text,
+        rootStyle: rootStyle,
+        segments: segments,
+        lines: lines,
+        matches: matches,
+        currentMatchIndex: matches.isEmpty ? -1 : currentMatch.clamp(0, matches.length - 1),
+      );
 
   int get totalMatchCount => matches.length;
 
   int? lineIndexForMatch(int matchIndex) {
-    if (matchIndex < 0 || matchIndex >= matchLineIndexes.length) {
+    if (matchIndex < 0 || matchIndex >= matches.length) {
       return null;
     }
-    return matchLineIndexes[matchIndex];
+    final start = matches[matchIndex].start;
+    var lower = 0;
+    var upper = lines.length - 1;
+    while (lower < upper) {
+      final mid = (lower + upper + 1) ~/ 2;
+      if (lines[mid].start <= start) {
+        lower = mid;
+      } else {
+        upper = mid - 1;
+      }
+    }
+    return lower;
+  }
+
+  int _firstMatchAfter(int offset) {
+    var lower = 0;
+    var upper = matches.length;
+    while (lower < upper) {
+      final mid = (lower + upper) ~/ 2;
+      if (matches[mid].end <= offset) {
+        lower = mid + 1;
+      } else {
+        upper = mid;
+      }
+    }
+    return lower;
   }
 
   List<InlineSpan> buildAllSpans(BuildContext context) {
@@ -96,15 +154,14 @@ class HighlightTextDocument {
 
   List<InlineSpan> buildSpansForLine(BuildContext context, int lineIndex, {int? currentMatchIndexOverride}) {
     final line = lines[lineIndex];
-    final matchesForLine = lineMatches[lineIndex];
-    if (matchesForLine.isEmpty) {
+    var matchIndex = _firstMatchAfter(line.start);
+    if (matchIndex == matches.length || matches[matchIndex].start >= line.end) {
       return _plainLineSpans(line);
     }
 
     final spans = <InlineSpan>[];
     final colorScheme = ColorScheme.of(context);
     final effectiveCurrentMatchIndex = currentMatchIndexOverride ?? currentMatchIndex;
-    var matchIndex = 0;
     var consumed = 0;
 
     for (final segment in line.segments) {
@@ -113,16 +170,16 @@ class HighlightTextDocument {
       var localStart = 0;
 
       while (localStart < segment.text.length) {
-        while (matchIndex < matchesForLine.length && matchesForLine[matchIndex].end <= segmentStart + localStart) {
+        while (matchIndex < matches.length && matches[matchIndex].end <= segmentStart + localStart) {
           matchIndex++;
         }
 
-        if (matchIndex >= matchesForLine.length || matchesForLine[matchIndex].start >= segmentEnd) {
+        if (matchIndex >= matches.length || matches[matchIndex].start >= segmentEnd) {
           _appendTextSpan(spans, segment.text.substring(localStart), segment.style);
           break;
         }
 
-        final match = matchesForLine[matchIndex];
+        final match = matches[matchIndex];
         final absoluteStart = segmentStart + localStart;
 
         if (match.start > absoluteStart) {
@@ -132,9 +189,17 @@ class HighlightTextDocument {
           continue;
         }
 
-        final overlapEnd = match.end < segmentEnd ? match.end : segmentEnd;
-        final matchText = segment.text.substring(localStart, overlapEnd - segmentStart);
         final isCurrentMatch = match.index == effectiveCurrentMatchIndex;
+        var highlightEnd = match.end;
+        while (!isCurrentMatch &&
+            highlightEnd < segmentEnd &&
+            matchIndex + 1 < matches.length &&
+            matches[matchIndex + 1].index != effectiveCurrentMatchIndex &&
+            matches[matchIndex + 1].start == highlightEnd) {
+          highlightEnd = matches[++matchIndex].end;
+        }
+        final overlapEnd = highlightEnd < segmentEnd ? highlightEnd : segmentEnd;
+        final matchText = segment.text.substring(localStart, overlapEnd - segmentStart);
 
         // 复用样式计算，减少对象创建
         final baseStyle = segment.style ?? const TextStyle();
@@ -202,8 +267,9 @@ List<HighlightStyledSegment> _buildHighlightBaseSegments(
   return [HighlightStyledSegment(text: text, style: _stripBackground(style))];
 }
 
-List<HighlightSearchMatch> _buildSearchMatches(String text, SearchSettings? search) {
-  if (search == null || search.pattern.isEmpty) return const [];
+List<HighlightSearchMatch> findHighlightMatches((String, SearchSettings) input) {
+  final (text, search) = input;
+  if (search.pattern.isEmpty) return const [];
 
   try {
     final regex =
@@ -270,47 +336,6 @@ void _appendTextSpan(List<InlineSpan> spans, String value, TextStyle? textStyle)
     return;
   }
   spans.add(TextSpan(text: value, style: textStyle));
-}
-
-List<List<HighlightSearchMatch>> _groupMatchesByLine(
-  List<HighlightDocumentLine> lines,
-  List<HighlightSearchMatch> matches,
-) {
-  if (matches.isEmpty || lines.isEmpty) {
-    return List.filled(lines.length, const <HighlightSearchMatch>[]);
-  }
-
-  final grouped = List.generate(lines.length, (_) => <HighlightSearchMatch>[]);
-  var lineIndex = 0;
-  for (final match in matches) {
-    while (lineIndex < lines.length && lines[lineIndex].end <= match.start) {
-      lineIndex++;
-    }
-
-    for (var i = lineIndex; i < lines.length; i++) {
-      final line = lines[i];
-      if (line.start >= match.end) {
-        break;
-      }
-      if (line.end > match.start) {
-        grouped[i].add(match);
-      }
-    }
-  }
-
-  return grouped;
-}
-
-List<int> _buildMatchLineIndexes(List<List<HighlightSearchMatch>> groupedMatches, int matchCount) {
-  final indexes = List.filled(matchCount, 0);
-  for (var lineIndex = 0; lineIndex < groupedMatches.length; lineIndex++) {
-    for (final match in groupedMatches[lineIndex]) {
-      if (match.index < indexes.length && indexes[match.index] == 0) {
-        indexes[match.index] = lineIndex;
-      }
-    }
-  }
-  return indexes;
 }
 
 class HighlightStyledSegment {

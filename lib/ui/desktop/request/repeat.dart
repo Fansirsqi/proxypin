@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/utils/replay_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -82,7 +83,7 @@ class _CustomRepeatState extends State<CustomRepeatDialog> {
   Widget build(BuildContext context) {
     final formKey = GlobalKey<FormState>();
 
-    return AlertDialog(
+    return FloatingAlertDialog(
       title: Text(localizations.customRepeat, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
       content: SingleChildScrollView(
           child: Form(
@@ -253,7 +254,7 @@ class _CustomRepeatState extends State<CustomRepeatDialog> {
     var date = await showDialog<DateTime>(
         context: context,
         builder: (BuildContext context) {
-          return AlertDialog(
+          return FloatingAlertDialog(
             contentPadding: const EdgeInsets.all(16.0),
             content: SizedBox(
               height: 250,

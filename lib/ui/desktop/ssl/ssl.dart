@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -18,10 +19,41 @@ import 'package:proxypin/utils/platform.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class SslWidget extends StatefulWidget {
-  final ProxyServer proxyServer;
+  final ProxyServer? proxyServer;
   final bool settingsTile;
+  final bool? _enableSsl;
+  final int? _port;
+  final Future<void> Function(bool)? _setSslEnabled;
+  final Future<void> Function(String, [Map<String, dynamic>?])? certificateAction;
 
-  const SslWidget({super.key, required this.proxyServer, this.settingsTile = false});
+  const SslWidget({super.key, required ProxyServer this.proxyServer, this.settingsTile = false})
+      : _enableSsl = null,
+        _port = null,
+        _setSslEnabled = null,
+        certificateAction = null;
+
+  const SslWidget.remote({
+    super.key,
+    required bool enableSsl,
+    required int port,
+    required Future<void> Function(bool) setSslEnabled,
+    required this.certificateAction,
+  })  : proxyServer = null,
+        settingsTile = true,
+        _enableSsl = enableSsl,
+        _port = port,
+        _setSslEnabled = setSslEnabled;
+
+  bool get enableSsl => proxyServer?.enableSsl ?? _enableSsl!;
+  int get port => proxyServer?.port ?? _port!;
+
+  Future<void> setSslEnabled(bool value) async {
+    if (_setSslEnabled case final set?) return set(value);
+    final server = proxyServer!;
+    server.enableSsl = value;
+    CertificateManager.cleanCache();
+    await server.configuration.flushConfig();
+  }
 
   @override
   State<SslWidget> createState() => _SslState();
@@ -58,15 +90,14 @@ class _SslState extends State<SslWidget> {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant),
                   icon: SvgIcon('lock',
-                      size: 17,
-                      color:
-                          widget.proxyServer.enableSsl ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.red),
+                      size: 17, color: widget.enableSsl ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.red),
                   label: const Text('HTTPS', style: TextStyle(fontSize: 12)),
                   onPressed: toggle));
         },
         menuChildren: [
           _Switch(
-            proxyServer: widget.proxyServer,
+            enabled: widget.enableSsl,
+            setEnabled: widget.setSslEnabled,
             onEnableChange: (value) {
               if (appConfiguration == null) {
                 setState(() {});
@@ -76,11 +107,11 @@ class _SslState extends State<SslWidget> {
             },
           ),
           if (!widget.settingsTile)
-            item('${localizations.port.trimRight()} ${widget.proxyServer.port}', onPressed: () async {
+            item('${localizations.port.trimRight()} ${widget.port}', onPressed: () async {
               await showDialog<void>(
                 context: context,
                 barrierDismissible: false,
-                builder: (_) => ProxyPortDialog(proxyServer: widget.proxyServer),
+                builder: (_) => ProxyPortDialog(proxyServer: widget.proxyServer!),
               );
               if (mounted) setState(() {});
             }),
@@ -88,7 +119,13 @@ class _SslState extends State<SslWidget> {
               onPressed: () => showDialog(context: context, builder: (context) => PCCert())),
           item("${localizations.installRootCa} iOS", onPressed: () async => iosCer(await localIp())),
           item("${localizations.installRootCa} Android", onPressed: () async => androidCer(await localIp())),
-          item(localizations.clientCertificate, onPressed: () => showClientCertDialog(context)),
+          item(localizations.clientCertificate, onPressed: () {
+            if (widget.certificateAction case final action?) {
+              action('client');
+            } else {
+              showClientCertDialog(context);
+            }
+          }),
           const Divider(thickness: 0.3, height: 3),
           exportMenu(),
           importMenu(),
@@ -96,7 +133,11 @@ class _SslState extends State<SslWidget> {
           item(localizations.generateCA, onPressed: () async {
             showConfirmDialog(context, title: localizations.generateCA, content: localizations.generateCADescribe,
                 onConfirm: () async {
-              await CertificateManager.generateNewRootCA();
+              if (widget.certificateAction case final action?) {
+                await action('generate');
+              } else {
+                await CertificateManager.generateNewRootCA();
+              }
               if (context.mounted) FlutterToastr.show(localizations.success, context);
             });
           }),
@@ -104,7 +145,11 @@ class _SslState extends State<SslWidget> {
             showConfirmDialog(context,
                 title: localizations.resetDefaultCA,
                 content: localizations.resetDefaultCADescribe, onConfirm: () async {
-              await CertificateManager.resetDefaultRootCA();
+              if (widget.certificateAction case final action?) {
+                await action('reset');
+              } else {
+                await CertificateManager.resetDefaultRootCA();
+              }
               if (context.mounted) FlutterToastr.show(localizations.success, context);
             });
           }),
@@ -122,7 +167,7 @@ class _SslState extends State<SslWidget> {
           context: context,
           builder: (BuildContext context) {
             String? password;
-            return SimpleDialog(
+            return FloatingSimpleDialog(
                 title: Text(localizations.importCaP12, style: const TextStyle(fontSize: 16)),
                 children: [
                   Padding(
@@ -141,13 +186,17 @@ class _SslState extends State<SslWidget> {
                       onPressed: () async {
                         var bytes = await file.readAsBytes();
                         try {
-                          await CertificateManager.importPkcs12(bytes, password);
+                          if (widget.certificateAction case final action?) {
+                            await action('import', {'bytes': bytes.toList(), 'password': password});
+                          } else {
+                            await CertificateManager.importPkcs12(bytes, password);
+                          }
                           if (context.mounted) {
                             FlutterToastr.show(localizations.success, context);
                             Navigator.pop(context);
                           }
                         } catch (e, stackTrace) {
-                          logger.e('import p12 error [$password]', error: e, stackTrace: stackTrace);
+                          logger.e('import p12 error', error: e, stackTrace: stackTrace);
                           if (context.mounted) FlutterToastr.show(localizations.importFailed, context);
                           return;
                         }
@@ -185,7 +234,7 @@ class _SslState extends State<SslWidget> {
                 showDialog(
                     context: context,
                     builder: (BuildContext context) {
-                      return SimpleDialog(
+                      return FloatingSimpleDialog(
                           title: Text(localizations.exportCaP12, style: const TextStyle(fontSize: 16)),
                           children: [
                             Padding(
@@ -246,7 +295,7 @@ class _SslState extends State<SslWidget> {
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return SimpleDialog(
+          return FloatingSimpleDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
               contentPadding: const EdgeInsets.symmetric(vertical: 5, horizontal: 15),
               title: Row(children: [
@@ -259,7 +308,7 @@ class _SslState extends State<SslWidget> {
               alignment: Alignment.center,
               children: [
                 SelectableText.rich(
-                    TextSpan(text: "1. ${localizations.configWifiProxy} Host：$host  Port：${widget.proxyServer.port}")),
+                    TextSpan(text: "1. ${localizations.configWifiProxy} Host：$host  Port：${widget.port}")),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -297,7 +346,7 @@ class _SslState extends State<SslWidget> {
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) {
-          return AlertDialog(
+          return FloatingAlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
               contentPadding: const EdgeInsets.all(5),
               title: Row(children: [
@@ -347,8 +396,7 @@ class _SslState extends State<SslWidget> {
                                       style: const TextStyle(fontWeight: FontWeight.w500)),
                                   const SizedBox(height: 10),
                                   SelectableText.rich(TextSpan(
-                                      text:
-                                          "1. ${localizations.configWifiProxy} Host：$host  Port：${widget.proxyServer.port}")),
+                                      text: "1. ${localizations.configWifiProxy} Host：$host  Port：${widget.port}")),
                                   const SizedBox(height: 10),
                                   Row(
                                     children: [
@@ -386,17 +434,18 @@ class _SslState extends State<SslWidget> {
 }
 
 class _Switch extends StatefulWidget {
-  final ProxyServer proxyServer;
+  final bool enabled;
+  final Future<void> Function(bool) setEnabled;
   final Function(bool val) onEnableChange;
 
-  const _Switch({required this.proxyServer, required this.onEnableChange});
+  const _Switch({required this.enabled, required this.setEnabled, required this.onEnableChange});
 
   @override
   State<_Switch> createState() => _SwitchState();
 }
 
 class _SwitchState extends State<_Switch> {
-  bool changed = false;
+  bool _saving = false;
 
   AppLocalizations get localizations => AppLocalizations.of(context)!;
 
@@ -415,15 +464,21 @@ class _SwitchState extends State<_Switch> {
               scale: 0.8,
               child: Switch(
                   hoverColor: Colors.transparent,
-                  value: widget.proxyServer.enableSsl,
-                  onChanged: (val) {
-                    widget.proxyServer.enableSsl = val;
-                    changed = true;
-                    widget.onEnableChange(val);
-                    CertificateManager.cleanCache();
-                    widget.proxyServer.configuration.flushConfig();
-                    setState(() {});
-                  }))
+                  value: widget.enabled,
+                  onChanged: _saving
+                      ? null
+                      : (value) async {
+                          setState(() => _saving = true);
+                          try {
+                            await widget.setEnabled(value);
+                            if (mounted) widget.onEnableChange(value);
+                          } catch (error, stackTrace) {
+                            logger.e('Could not update HTTPS capture', error: error, stackTrace: stackTrace);
+                            if (context.mounted) FlutterToastr.show(localizations.fail, context);
+                          } finally {
+                            if (mounted) setState(() => _saving = false);
+                          }
+                        }))
         ]));
   }
 }

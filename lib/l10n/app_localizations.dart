@@ -3244,17 +3244,17 @@ abstract class AppLocalizations {
   /// **'Adjust row height in the capture list'**
   String get captureListDensitySubtitle;
 
-  /// No description provided for @alwaysShowCaptureRowDetails.
+  /// No description provided for @showCaptureRowDetails.
   ///
   /// In en, this message translates to:
-  /// **'Always show the second line'**
-  String get alwaysShowCaptureRowDetails;
+  /// **'Show extra request details'**
+  String get showCaptureRowDetails;
 
-  /// No description provided for @alwaysShowCaptureRowDetailsSubtitle.
+  /// No description provided for @showCaptureRowDetailsSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Show status, time and duration even below {threshold}%'**
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold);
+  /// **'Show status, time and duration in the capture list'**
+  String get showCaptureRowDetailsSubtitle;
 
   /// No description provided for @densityComfortable.
   ///

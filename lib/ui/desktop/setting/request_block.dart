@@ -15,6 +15,7 @@
  */
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/manager/request_block_manager.dart';
 import 'package:proxypin/ui/component/utils.dart';
@@ -189,7 +190,7 @@ class RequestBlockAddDialog extends StatelessWidget {
     RequestBlockItem item =
         index == null ? RequestBlockItem(true, '', BlockType.values.first) : requestBlockManager.list.elementAt(index!);
     bool enabled = item.enabled;
-    return AlertDialog(
+    return FloatingAlertDialog(
         scrollable: true,
         content: Padding(
             padding: const EdgeInsets.all(8.0),

@@ -141,16 +141,17 @@ class RequestRowState extends State<RequestRow> {
 
     var highlightColor = color(url);
 
-    final display = AppDisplaySettings.of(context);
+    final display = AppDisplaySettings.captureOf(context);
     final showDetails = display?.showCaptureRowDetails ?? true;
     final metrics = display?.captureRowMetrics;
-    final titleSize = (metrics?.titleSize ?? 13) + 1;
+    final rowScale = display?.captureRowScale ?? 1;
+    final titleSize = (metrics?.titleSize ?? 13) * 14 / 13;
 
     return GestureDetector(
         onLongPressStart: menu,
         child: ListTile(
           visualDensity: const VisualDensity(vertical: -4),
-          minTileHeight: (showDetails ? 40 : 32) + (metrics?.gap ?? 3) * 16 / 3,
+          minTileHeight: (showDetails ? 56 : 48) * rowScale,
           minVerticalPadding: (metrics?.gap ?? 3) * 4 / 3,
           minLeadingWidth: 5,
           selected: selected ||
@@ -159,7 +160,7 @@ class RequestRowState extends State<RequestRow> {
           selectedColor: highlightColor,
           leading: rowLeading(),
           title: Text.rich(
-              maxLines: display?.compactCaptureRows == true ? 1 : 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               TextSpan(style: TextStyle(fontSize: titleSize), children: [
                 TextSpan(text: title.fixAutoLines()),

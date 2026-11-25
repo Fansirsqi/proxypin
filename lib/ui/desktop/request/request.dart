@@ -185,9 +185,8 @@ class _RequestWidgetState extends State<RequestWidget> {
     // Material+InkWell：hover/水波纹由组件自身处理，不触发整行 setState 重建
     //（之前 MouseRegion+setState 会让图片缩略图每次 hover 都重新解码，闪烁且费性能）。
     // 行密度来自偏好设置（抓包列表密度）
-    final display = AppDisplaySettings.of(context);
+    final display = AppDisplaySettings.captureOf(context);
     final showDetails = display?.showCaptureRowDetails ?? true;
-    final titleLines = display?.compactCaptureRows == true ? 1 : 2;
     final metrics = (display?.captureRowMetrics ??
         const CaptureRowMetrics(
             leftWithDomain: 12,
@@ -234,7 +233,7 @@ class _RequestWidgetState extends State<RequestWidget> {
                   Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text.rich(
-                        maxLines: titleLines,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         TextSpan(children: [
                           TextSpan(text: '${request.method.name} '),
@@ -391,7 +390,7 @@ class _RequestWidgetState extends State<RequestWidget> {
         });
         break;
       case _RequestMenuAction.requestRewrite:
-        showRequestRewriteDialog(context, widget.request);
+        openCapturedRewrite(context, widget.request);
         break;
       case _RequestMenuAction.requestMap:
         showDialog(

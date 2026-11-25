@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/components/host_filter.dart';
 import 'package:proxypin/network/util/url_pattern.dart';
@@ -19,7 +20,7 @@ class DomainAddDialog extends StatelessWidget {
 
     GlobalKey formKey = GlobalKey<FormState>();
     String? host = index == null ? null : hostList.list.elementAt(index!).pattern.replaceAll(".*", "*");
-    return AlertDialog(
+    return FloatingAlertDialog(
         scrollable: true,
         content: Padding(
             padding: const EdgeInsets.all(8.0),

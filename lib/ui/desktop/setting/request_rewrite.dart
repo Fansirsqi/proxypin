@@ -16,9 +16,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:proxypin/ui/component/floating_dialog.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
@@ -497,14 +497,78 @@ class _RequestRuleListState extends State<RequestRuleList> {
   }
 }
 
-///请求重写规则添加对话框
+class CapturedRewriteWindow extends StatefulWidget {
+  final String windowId;
+  final HttpRequest request;
+  final RuleType ruleType;
+
+  const CapturedRewriteWindow({
+    super.key,
+    required this.windowId,
+    required this.request,
+    required this.ruleType,
+  });
+
+  @override
+  State<CapturedRewriteWindow> createState() => _CapturedRewriteWindowState();
+}
+
+class _CapturedRewriteWindowState extends State<CapturedRewriteWindow> {
+  late Future<({RequestRewriteRule rule, List<RewriteItem>? items})?> _draft = _loadDraft();
+
+  Future<({RequestRewriteRule rule, List<RewriteItem>? items})?> _loadDraft() async {
+    final draft = await DesktopMultiWindow.invokeMainWindowMethod<Map>('getCapturedRewrite', {
+      'method': widget.request.method.name,
+      'url': widget.request.requestUrl,
+      'protocolVersion': widget.request.protocolVersion,
+      'type': widget.ruleType.name,
+    });
+    if (draft == null) return null;
+    return (
+      rule: RequestRewriteRule.formJson(draft['rule'] as Map),
+      items: (draft['items'] as List?)?.map((item) => RewriteItem.fromJson(item as Map)).toList(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: _draft,
+      builder: (context, snapshot) {
+        if (snapshot.data case final draft?) {
+          return RewriteRuleEdit(
+            windowId: widget.windowId,
+            rule: draft.rule,
+            items: draft.items,
+            request: widget.request,
+            independent: true,
+          );
+        }
+        return Scaffold(
+          body: Center(
+            child: snapshot.connectionState == ConnectionState.done
+                ? TextButton(
+                    onPressed: () => setState(() => _draft = _loadDraft()),
+                    child: Text(MaterialLocalizations.of(context).refreshIndicatorSemanticLabel),
+                  )
+                : const CircularProgressIndicator(),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class RewriteRuleEdit extends StatefulWidget {
+  static const windowName = 'CapturedRewriteEditor';
+
   final RequestRewriteRule? rule;
   final List<RewriteItem>? items;
   final HttpRequest? request;
   final String? windowId;
+  final bool independent;
 
-  const RewriteRuleEdit({super.key, this.rule, this.items, this.windowId, this.request});
+  const RewriteRuleEdit({super.key, this.rule, this.items, this.windowId, this.request, this.independent = false});
 
   @override
   State<StatefulWidget> createState() {
@@ -515,6 +579,8 @@ class RewriteRuleEdit extends StatefulWidget {
 class _RewriteRuleEditState extends State<RewriteRuleEdit> {
   final rewriteReplaceKey = GlobalKey<RewriteReplaceState>();
   final rewriteUpdateKey = GlobalKey<RewriteUpdateState>();
+  final _formKey = GlobalKey<FormState>();
+  bool _saving = false;
 
   late RequestRewriteRule rule;
   List<RewriteItem>? items;
@@ -529,6 +595,7 @@ class _RewriteRuleEditState extends State<RewriteRuleEdit> {
   void initState() {
     super.initState();
     rule = widget.rule ?? RequestRewriteRule(url: '', type: RuleType.responseReplace);
+    if (widget.independent) HardwareKeyboard.instance.addHandler(_onKeyEvent);
     items = widget.items;
     ruleType = rule.type;
     nameInput = TextEditingController(text: rule.name);
@@ -541,6 +608,7 @@ class _RewriteRuleEditState extends State<RewriteRuleEdit> {
 
   @override
   void dispose() {
+    if (widget.independent) HardwareKeyboard.instance.removeHandler(_onKeyEvent);
     urlInput.dispose();
     nameInput.dispose();
     super.dispose();
@@ -548,136 +616,181 @@ class _RewriteRuleEditState extends State<RewriteRuleEdit> {
 
   @override
   Widget build(BuildContext context) {
-    GlobalKey formKey = GlobalKey<FormState>();
     bool isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
 
-    return AlertDialog(
-        scrollable: true,
-        titlePadding: const EdgeInsets.only(top: 10, left: 20),
-        actionsPadding: const EdgeInsets.only(right: 15, bottom: 15),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-        title: Row(children: [
-          Text(localizations.requestRewriteRule, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-          const SizedBox(width: 20),
-          Text.rich(TextSpan(
-              text: localizations.useGuide,
-              style: const TextStyle(color: Colors.blue, fontSize: 14),
-              recognizer: TapGestureRecognizer()
-                ..onTap = () => launchUrl(Uri.parse(isCN
-                    ? 'https://gitee.com/wanghongenpin/proxypin/wikis/%E8%AF%B7%E6%B1%82%E9%87%8D%E5%86%99'
-                    : 'https://github.com/wanghongenpin/proxypin/wiki/Request-Rewrite')))),
-        ]),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
-        content: Container(
-            width: 550,
-            constraints: const BoxConstraints(minHeight: 200, maxHeight: 564),
-            child: Form(
-                key: formKey,
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Row(children: [
-                        SizedBox(width: 55, child: Text('${localizations.enable}:')),
-                        SwitchWidget(value: rule.enabled, onChanged: (val) => rule.enabled = val, scale: 0.8)
-                      ]),
-                      const SizedBox(height: 5),
-                      textField('${localizations.name}:', nameInput, localizations.pleaseEnter),
-                      const SizedBox(height: 10),
-                      // URL input with Method as prefix (method shown before the URL field)
-                      Row(children: [
-                        SizedBox(width: 60, child: Text('URL:')),
-                        Expanded(
-                          child: TextFormField(
-                            controller: urlInput,
-                            style: const TextStyle(fontSize: 14),
-                            validator: (val) => val?.isNotEmpty == true ? null : "",
-                            decoration: InputDecoration(
-                              hintText: 'https://www.example.com/api/*',
-                              hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
-                              errorStyle: const TextStyle(height: 0, fontSize: 0),
-                              focusedBorder: focusedBorder(),
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                              prefixIcon: Padding(
-                                padding: const EdgeInsets.only(left: 6, right: 6),
-                                child: MethodPopupMenu(
-                                  value: rule.method,
-                                  showSeparator: true,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      rule.method = val;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
+    final title = Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 20, children: [
+      if (!widget.independent)
+        Text(localizations.requestRewriteRule, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+      TextButton(
+        child: Text(localizations.useGuide),
+        onPressed: () => launchUrl(Uri.parse(isCN
+            ? 'https://gitee.com/wanghongenpin/proxypin/wikis/%E8%AF%B7%E6%B1%82%E9%87%8D%E5%86%99'
+            : 'https://github.com/wanghongenpin/proxypin/wiki/Request-Rewrite')),
+      ),
+    ]);
+    final form = Form(
+        key: _formKey,
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(children: [
+                SizedBox(width: 55, child: Text('${localizations.enable}:')),
+                SwitchWidget(value: rule.enabled, onChanged: (val) => rule.enabled = val, scale: 0.8)
+              ]),
+              const SizedBox(height: 5),
+              textField('${localizations.name}:', nameInput, localizations.pleaseEnter),
+              const SizedBox(height: 10),
+              // URL input with Method as prefix (method shown before the URL field)
+              Row(children: [
+                SizedBox(width: 60, child: Text('URL:')),
+                Expanded(
+                  child: TextFormField(
+                    controller: urlInput,
+                    style: const TextStyle(fontSize: 14),
+                    validator: (val) => val?.isNotEmpty == true ? null : "",
+                    decoration: InputDecoration(
+                      hintText: 'https://www.example.com/api/*',
+                      hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
+                      errorStyle: const TextStyle(height: 0, fontSize: 0),
+                      focusedBorder: focusedBorder(),
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(left: 6, right: 6),
+                        child: MethodPopupMenu(
+                          value: rule.method,
+                          showSeparator: true,
+                          onChanged: (val) {
+                            setState(() {
+                              rule.method = val;
+                            });
+                          },
                         ),
-                      ]),
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        SizedBox(width: 60, child: Text('${localizations.action}:')),
-                        SizedBox(
-                            width: 170,
-                            height: 36,
-                            child: DropdownButtonFormField<RuleType>(
-                              onSaved: (val) => rule.type = val!,
-                              initialValue: ruleType,
-                              decoration: InputDecoration(
-                                  errorStyle: const TextStyle(height: 0, fontSize: 0),
-                                  contentPadding: const EdgeInsets.only(left: 7, right: 7),
-                                  focusedBorder: focusedBorder(),
-                                  border: const OutlineInputBorder()),
-                              items: RuleType.values
-                                  .map((e) => DropdownMenuItem(
-                                      value: e,
-                                      child: Text(isCN ? e.label : e.name, style: const TextStyle(fontSize: 14))))
-                                  .toList(),
-                              onChanged: onChangeType,
-                            )),
-                        const SizedBox(width: 10),
-                      ]),
-                      const SizedBox(height: 10),
-                      rewriteRule(),
-                    ]))),
-        actions: [
-          ElevatedButton(child: Text(localizations.close), onPressed: () => Navigator.of(context).pop()),
-          FilledButton(
-              child: Text(localizations.save),
-              onPressed: () async {
-                if (!(formKey.currentState as FormState).validate()) {
-                  FlutterToastr.show(localizations.cannotBeEmpty, context, position: FlutterToastr.center);
-                  return;
-                }
+                      ),
+                    ),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                SizedBox(width: 60, child: Text('${localizations.action}:')),
+                Flexible(
+                  child: SizedBox(
+                    width: 205,
+                    height: 36,
+                    child: DropdownButtonFormField<RuleType>(
+                      isExpanded: true,
+                      onSaved: (val) => rule.type = val!,
+                      initialValue: ruleType,
+                      decoration: InputDecoration(
+                          errorStyle: const TextStyle(height: 0, fontSize: 0),
+                          contentPadding: const EdgeInsets.only(left: 7, right: 7),
+                          focusedBorder: focusedBorder(),
+                          border: const OutlineInputBorder()),
+                      items: RuleType.values
+                          .map((e) => DropdownMenuItem(
+                              value: e, child: Text(isCN ? e.label : e.name, style: const TextStyle(fontSize: 14))))
+                          .toList(),
+                      onChanged: onChangeType,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ]),
+              const SizedBox(height: 10),
+              if (widget.independent) Expanded(child: rewriteRule()) else rewriteRule(),
+            ]));
+    final actions = [
+      ElevatedButton(child: Text(localizations.close), onPressed: _saving ? null : _close),
+      FilledButton(child: Text(localizations.save), onPressed: _saving ? null : _save),
+    ];
+    if (widget.independent) {
+      return Scaffold(
+        body: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            child: SizedBox(
+              height: (constraints.maxHeight - 24).clamp(590, double.infinity).toDouble(),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                title,
+                const SizedBox(height: 8),
+                Expanded(child: IgnorePointer(ignoring: _saving, child: form)),
+                const SizedBox(height: 12),
+                OverflowBar(alignment: MainAxisAlignment.end, spacing: 8, children: actions),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+    return FloatingAlertDialog(
+      scrollable: true,
+      titlePadding: const EdgeInsets.only(top: 10, left: 20),
+      actionsPadding: const EdgeInsets.only(right: 15, bottom: 15),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+      title: title,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+      content: Container(width: 550, constraints: const BoxConstraints(minHeight: 200, maxHeight: 564), child: form),
+      actions: actions,
+    );
+  }
 
-                (formKey.currentState as FormState).save();
-                rule.name = nameInput.text;
-                rule.url = urlInput.text;
-                // method already set on change
-                items = rewriteReplaceKey.currentState?.getItems() ?? rewriteUpdateKey.currentState?.getItems();
+  void _close() {
+    if (widget.independent) {
+      WindowController.fromWindowId(widget.windowId!).close();
+    } else {
+      Navigator.of(context).pop();
+    }
+  }
 
-                var requestRewrites = await RequestRewriteManager.instance;
-                requestRewrites.rewriteItemsCache[rule] = items!;
-                var index = requestRewrites.rules.indexOf(rule);
+  bool _onKeyEvent(KeyEvent event) {
+    final keyboard = HardwareKeyboard.instance;
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.keyW ||
+        !(keyboard.isControlPressed || keyboard.isMetaPressed)) {
+      return false;
+    }
+    if (!_saving) _close();
+    return true;
+  }
 
-                if (index >= 0) {
-                  //存在 更新重写
-                  await MultiWindow.invokeRefreshRewrite(Operation.update, index: index, rule: rule, items: items);
-                } else {
-                  //添加
-                  if (widget.windowId != null) {
-                    requestRewrites.rules.add(rule);
-                  }
+  Future<void> _save() async {
+    final form = _formKey.currentState!;
+    if (!form.validate()) {
+      FlutterToastr.show(localizations.cannotBeEmpty, context, position: FlutterToastr.center);
+      return;
+    }
 
-                  await MultiWindow.invokeRefreshRewrite(Operation.add, rule: rule, items: items);
-                }
-                if (mounted) {
-                  Navigator.of(this.context).pop(rule);
-                }
-              })
-        ]);
+    form.save();
+    rule.name = nameInput.text;
+    rule.url = urlInput.text;
+    items = rewriteReplaceKey.currentState?.getItems() ?? rewriteUpdateKey.currentState?.getItems();
+    setState(() => _saving = true);
+    try {
+      if (widget.independent) {
+        final operation = rule.rewritePath == null ? Operation.add : Operation.update;
+        await MultiWindow.invokeRefreshRewrite(operation, rule: rule, items: items, capturedEditor: true);
+        if (mounted) await WindowController.fromWindowId(widget.windowId!).close();
+        return;
+      }
+      final manager = await RequestRewriteManager.instance;
+      manager.rewriteItemsCache[rule] = items!;
+      final index = manager.rules.indexOf(rule);
+      if (index >= 0) {
+        await MultiWindow.invokeRefreshRewrite(Operation.update, index: index, rule: rule, items: items);
+      } else {
+        if (widget.windowId != null) manager.rules.add(rule);
+        await MultiWindow.invokeRefreshRewrite(Operation.add, rule: rule, items: items);
+      }
+      if (mounted) Navigator.of(context).pop(rule);
+    } catch (error, stackTrace) {
+      logger.e('Could not save the rewrite rule', error: error, stackTrace: stackTrace);
+      if (mounted) FlutterToastr.show(error.toString(), context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   void onChangeType(RuleType? val) async {

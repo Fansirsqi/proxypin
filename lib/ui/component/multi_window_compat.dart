@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -12,6 +13,7 @@ import 'package:window_manager/window_manager.dart';
 export 'package:desktop_multi_window/desktop_multi_window.dart';
 
 typedef DesktopMultiWindowMethodHandler = Future<dynamic> Function(MethodCall call, String fromWindowId);
+typedef _CloseSaveState = ({Future<void> saves, Future<void> requests, Object? configWrites});
 
 class DesktopMultiWindow {
   static const String _mainWindowIdKey = '__mainWindowId';
@@ -27,11 +29,16 @@ class DesktopMultiWindow {
   static const String _mainWindowChannelName = 'proxypin/main_window';
   static const String standaloneWindowArgument = 'standalone_window';
   static const String _standaloneRequestPrefix = 'proxypin:tool:';
+  static const String _prepareClose = 'prepare_close';
+  static const String _commitClose = 'commit_close';
+  static const String _cancelClose = 'cancel_close';
   static const _standaloneMethods = {
     _saveDetailPreferencesMethod,
+    ...desktopSettingsMethods,
     'getProxyInfo',
     'getReplayTasks',
     'updateReplayTask',
+    'getCapturedRewrite',
     'refreshRequestRewrite',
     'refreshRequestMap',
     'refreshRequestBlock',
@@ -41,6 +48,16 @@ class DesktopMultiWindow {
     'openScriptConsole',
     'registerConsoleLog',
     'openToolWindow',
+  };
+
+  static const desktopSettingsMethods = {
+    'getDesktopSettings',
+    'saveDesktopSettings',
+    'previewSettingsDensity',
+    'resetSettingsPreview',
+    'updateDesktopProxySetting',
+    'openDesktopSettingTool',
+    'changeDesktopCertificate',
   };
 
   static final WindowMethodChannel _mainWindowChannel = WindowMethodChannel(
@@ -55,14 +72,25 @@ class DesktopMultiWindow {
   static String? _windowTitle;
   static Size? _windowSize;
   static DesktopMultiWindowMethodHandler? _handler;
-  static final Map<String, Process> _standaloneProcesses = {};
-  static final Map<String, Process> _standaloneSingletons = {};
+  static final Map<String, _StandaloneProcess> _standaloneProcesses = {};
+  static final Map<String, _StandaloneProcess> _standaloneSingletons = {};
+  static final Set<Future<void>> _standaloneLaunches = {};
+  static bool _closingStandaloneWindows = false;
+  static int _closeAttempt = 0;
   static StreamIterator<String>? _standaloneInput;
   static Future<void> _standaloneQueue = Future.value();
   static Completer<dynamic>? _standaloneReply;
   static Future<void> _windowSaves = Future.value();
+  static final Queue<Future<void> Function()> _pendingSaves = Queue();
+  static AsyncError? _windowSaveFailure;
   static Future<void> Function()? _flushStandaloneConfig;
-  static bool _standaloneClosing = false;
+  static Object Function()? _standaloneConfigWriteToken;
+  static IOSink? _closeOutput;
+  static Future<void>? _standaloneClosing;
+  static int? _closingAttempt;
+  static bool _standaloneClosed = false;
+  static Future<_CloseSaveState>? _standaloneCloseSaves;
+  static int? _preparedClose;
   static bool _standaloneDisconnected = false;
   static Map<dynamic, dynamic>? _themeSettings;
   static void Function(Map<dynamic, dynamic>)? onThemeChanged;
@@ -112,7 +140,25 @@ class DesktopMultiWindow {
     Size size,
     Map<String, dynamic> pageArguments, {
     bool singleton = false,
+    @visibleForTesting Future<Process> Function()? startProcess,
   }) async {
+    if (_closingStandaloneWindows) throw StateError('The main window is closing');
+    final launch = _launchStandaloneWindow(title, size, pageArguments, singleton, startProcess);
+    _standaloneLaunches.add(launch);
+    try {
+      await launch;
+    } finally {
+      _standaloneLaunches.remove(launch);
+    }
+  }
+
+  static Future<void> _launchStandaloneWindow(
+    String title,
+    Size size,
+    Map<String, dynamic> pageArguments,
+    bool singleton,
+    Future<Process> Function()? startProcess,
+  ) async {
     final name = pageArguments['name'] as String;
     final existing = _standaloneSingletons[name];
     if (singleton && existing != null) {
@@ -125,14 +171,16 @@ class DesktopMultiWindow {
       _windowSizeKey: {'width': size.width, 'height': size.height},
       _themeKey: _themeSettings,
     });
-    final process = await Process.start(Platform.resolvedExecutable, [standaloneWindowArgument]);
+    final process =
+        await (startProcess?.call() ?? Process.start(Platform.resolvedExecutable, [standaloneWindowArgument]));
     final id = 'tool:${process.pid}';
-    _standaloneProcesses[id] = process;
-    if (singleton) _standaloneSingletons[name] = process;
+    final tool = _StandaloneProcess(process);
+    _standaloneProcesses[id] = tool;
+    if (singleton) _standaloneSingletons[name] = tool;
     process.stdin.done.ignore();
     process.stdin.writeln(arguments);
     if (_themeSettings case final settings?) {
-      _sendStandaloneEvent(process, _themeMethod, settings);
+      _sendStandaloneEvent(tool, _themeMethod, settings);
     }
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) async {
       if (!line.startsWith(_standaloneRequestPrefix)) {
@@ -141,8 +189,9 @@ class DesktopMultiWindow {
       }
       try {
         final request = jsonDecode(line.substring(_standaloneRequestPrefix.length)) as Map<String, dynamic>;
+        if (tool.handleCloseMessage(request)) return;
         final method = request['method'] as String;
-        if (_handler == null || !_standaloneMethods.contains(method)) {
+        if (!_standaloneMethods.contains(method) || (_handler == null && method != _saveDetailPreferencesMethod)) {
           throw UnsupportedError(method);
         }
         final result = await _dispatchMethodCall(MethodCall(method, request['arguments']), id);
@@ -152,36 +201,45 @@ class DesktopMultiWindow {
       }
     }, onError: (Object error, StackTrace stackTrace) {
       logger.e('Tool output failed', error: error, stackTrace: stackTrace);
-    });
+    }, onDone: tool.outputClosed.complete);
     process.stderr.listen(stderr.add, onError: (Object error, StackTrace stackTrace) {
       logger.e('Tool error output failed', error: error, stackTrace: stackTrace);
     });
-    unawaited(process.exitCode.then((code) {
+    unawaited(tool.exited.then((code) {
       process.stdin.close().ignore();
-      _standaloneProcesses.remove(id);
-      if (_standaloneSingletons[name] == process) _standaloneSingletons.remove(name);
+      if (_standaloneProcesses[id] == tool) _standaloneProcesses.remove(id);
+      if (_standaloneSingletons[name] == tool) _standaloneSingletons.remove(name);
       onStandaloneClosed?.call(id);
-      if (code != 0 && !_standaloneClosing) {
+      if (code != 0) {
         logger.e('Tool window ${pageArguments['name']} exited with code $code');
       }
     }));
   }
 
-  static Future<void> closeStandaloneWindows() async {
-    _standaloneClosing = true;
-    final processes = _standaloneProcesses.values.toList();
-    for (final process in processes) {
-      _sendStandaloneEvent(process, 'window_close', null);
-    }
-    await Future.wait(processes.map((process) async {
-      try {
-        await process.exitCode.timeout(const Duration(seconds: 2));
-      } on TimeoutException {
-        process.kill();
-        await process.exitCode;
+  static Future<void> closeStandaloneWindows({Duration timeout = const Duration(seconds: 5)}) async {
+    _closingStandaloneWindows = true;
+    final attempt = ++_closeAttempt;
+    var tools = <_StandaloneProcess>[];
+    try {
+      await Future.wait(_standaloneLaunches.toList().map((launch) => launch.then<void>((_) {}, onError: (_) {})))
+          .timeout(timeout);
+      tools = _standaloneProcesses.values.toList();
+      await Future.wait(tools.map((tool) => tool.prepare(attempt, timeout)), eagerError: true);
+      await Future.wait(tools.map((tool) => tool.commit(attempt, timeout)), eagerError: true);
+    } catch (_) {
+      for (final tool in tools) {
+        tool.cancel(attempt);
       }
-    }));
+      resumeStandaloneWindows();
+      rethrow;
+    } finally {
+      for (final tool in tools) {
+        tool.finish(attempt);
+      }
+    }
   }
+
+  static void resumeStandaloneWindows() => _closingStandaloneWindows = false;
 
   static Future<String> readStandaloneWindowArguments(Stream<List<int>> bytes) async {
     final input = StreamIterator(bytes.transform(utf8.decoder).transform(const LineSplitter()));
@@ -195,8 +253,12 @@ class DesktopMultiWindow {
       while (await input.moveNext()) {
         final message = jsonDecode(input.current) as Map<String, dynamic>;
         if (message['event'] case final String event) {
-          unawaited(_handleWindowEvent(MethodCall(event, message['arguments'])).then<void>((_) {},
-              onError: (Object error, StackTrace stackTrace) {
+          final arguments = message['arguments'];
+          final handling = switch (event) {
+            _prepareClose || _commitClose || _cancelClose => _handleStandaloneClose(event, arguments as int),
+            _ => _handleWindowEvent(MethodCall(event, arguments)),
+          };
+          unawaited(handling.then<void>((_) {}, onError: (Object error, StackTrace stackTrace) {
             logger.e('Tool window event failed', error: error, stackTrace: stackTrace);
           }));
         } else {
@@ -230,8 +292,8 @@ class DesktopMultiWindow {
     return reply;
   }
 
-  static void _sendStandaloneEvent(Process process, String event, dynamic arguments) {
-    process.stdin.writeln(jsonEncode({'event': event, 'arguments': arguments}));
+  static void _sendStandaloneEvent(_StandaloneProcess tool, String event, dynamic arguments) {
+    if (!tool.processExited) tool.process.stdin.writeln(jsonEncode({'event': event, 'arguments': arguments}));
   }
 
   static Future<void> updateTheme(Map<String, dynamic> settings) async {
@@ -270,7 +332,24 @@ class DesktopMultiWindow {
     }
   }
 
-  static Future<void> saveStandaloneChanges(Future<void> Function() save) {
+  static Future<void> saveStandaloneChanges(Future<void> Function() save, {bool retryOnClose = false}) {
+    if (!isStandalone) return _queueWindowSave(save);
+    if (retryOnClose) {
+      _pendingSaves.add(save);
+      return _queueWindowSave(_retryPendingSaves);
+    }
+    return _queueWindowSave(() async {
+      try {
+        await save();
+        _windowSaveFailure = null;
+      } catch (error, stackTrace) {
+        _windowSaveFailure = AsyncError(error, stackTrace);
+        rethrow;
+      }
+    });
+  }
+
+  static Future<void> _queueWindowSave(Future<void> Function() save) {
     final operation = _windowSaves.then((_) => save());
     _windowSaves = operation.then<void>((_) {}, onError: (Object error, StackTrace stackTrace) {
       logger.e('Saving tool changes failed', error: error, stackTrace: stackTrace);
@@ -278,28 +357,114 @@ class DesktopMultiWindow {
     return operation;
   }
 
-  static Future<void> prepareStandaloneClose(Future<void> Function() flushConfig) async {
+  static Future<void> _retryPendingSaves() async {
+    while (_pendingSaves.isNotEmpty) {
+      await _pendingSaves.first();
+      _pendingSaves.removeFirst();
+    }
+  }
+
+  static Future<void> prepareStandaloneClose(
+    Future<void> Function() flushConfig, {
+    Object Function()? configWriteToken,
+    @visibleForTesting IOSink? closeOutput,
+  }) async {
     _flushStandaloneConfig = flushConfig;
+    _standaloneConfigWriteToken = configWriteToken;
+    _closeOutput = closeOutput;
     await windowManager.setPreventClose(true);
     windowManager.addListener(_StandaloneCloseListener());
   }
 
-  static Future<void> closeStandaloneWindow() async {
-    if (_standaloneClosing) return;
-    _standaloneClosing = true;
-    if (!_standaloneDisconnected) {
-      try {
-        await _flushStandaloneConfig?.call();
-      } catch (error, stackTrace) {
-        if (!_standaloneDisconnected) {
-          _standaloneClosing = false;
-          logger.e('Could not save configuration before closing the tool window', error: error, stackTrace: stackTrace);
-          return;
-        }
-      }
+  static _CloseSaveState get _closeSaveState =>
+      (saves: _windowSaves, requests: _standaloneQueue, configWrites: _standaloneConfigWriteToken?.call());
+
+  static Future<_CloseSaveState> _saveBeforeClosing() {
+    return _standaloneCloseSaves ??= _drainCloseSaves().whenComplete(() => _standaloneCloseSaves = null);
+  }
+
+  static Future<_CloseSaveState> _drainCloseSaves() async {
+    while (true) {
+      final drain = _queueWindowSave(_retryPendingSaves);
+      final saves = _windowSaves;
+      await drain;
+      final requests = _standaloneQueue;
+      await requests;
+      final configFlush = _flushStandaloneConfig?.call();
+      final configWrites = _standaloneConfigWriteToken?.call();
+      await configFlush;
+      final state = _closeSaveState;
+      if (state != (saves: saves, requests: requests, configWrites: configWrites)) continue;
+      if (_windowSaveFailure case final failure?) Error.throwWithStackTrace(failure.error, failure.stackTrace);
+      return state;
     }
-    await _windowSaves;
-    await windowManager.destroy();
+  }
+
+  static Future<void> closeStandaloneWindow() async {
+    try {
+      await _finishStandaloneClose();
+    } catch (error, stackTrace) {
+      logger.e('Could not close the tool window', error: error, stackTrace: stackTrace);
+    }
+  }
+
+  static Future<void> _finishStandaloneClose({int? attempt}) async {
+    for (var closing = _standaloneClosing; closing != null; closing = _standaloneClosing) {
+      if (attempt == _closingAttempt || (_closingAttempt == null && attempt != null)) return closing;
+      try {
+        await closing;
+      } catch (_) {}
+    }
+    if (_standaloneClosed) return;
+    if (attempt != null && _preparedClose != attempt) return;
+    _closingAttempt = attempt;
+    await (_standaloneClosing = _destroySavedWindow(attempt).whenComplete(() => _standaloneClosing = null));
+  }
+
+  static Future<void> _destroySavedWindow(int? attempt) async {
+    bool cancelled() => attempt != null && _preparedClose != attempt;
+    var saved = await _saveBeforeClosing();
+    if (cancelled()) return;
+    final sendReceipt = isStandalone && !_standaloneDisconnected;
+    try {
+      if (sendReceipt) await _sendCloseMessage({'closeSaved': true});
+      while (!cancelled() && saved != _closeSaveState) {
+        saved = await _saveBeforeClosing();
+      }
+      if (cancelled()) {
+        if (sendReceipt && !_standaloneDisconnected) await _sendCloseMessage({'closeSaved': false});
+        return;
+      }
+      await windowManager.destroy();
+      _standaloneClosed = true;
+    } catch (_) {
+      if (sendReceipt && !_standaloneDisconnected) await _sendCloseMessage({'closeSaved': false});
+      rethrow;
+    }
+  }
+
+  static Future<void> _sendCloseMessage(Map<String, dynamic> message) {
+    final output = _closeOutput ?? stdout;
+    output.writeln('$_standaloneRequestPrefix${jsonEncode(message)}');
+    return output.flush();
+  }
+
+  static Future<void> _handleStandaloneClose(String event, int attempt) async {
+    try {
+      if (event == _prepareClose) {
+        _preparedClose = attempt;
+        await _saveBeforeClosing();
+        if (_preparedClose == attempt) {
+          await _sendCloseMessage({'closeAttempt': attempt, 'ready': true});
+        }
+      } else if (event == _cancelClose) {
+        if (_preparedClose == attempt) _preparedClose = null;
+      } else if (_preparedClose == attempt) {
+        await _finishStandaloneClose(attempt: attempt);
+      }
+    } catch (error) {
+      await _sendCloseMessage({'closeAttempt': attempt, 'closeError': error.toString()});
+    }
   }
 
   /// 首帧初始化 Flutter surface 后调整隐藏窗口，并等待 resize 后的帧完成再显示。
@@ -383,7 +548,7 @@ class DesktopMultiWindow {
       if (saved != true) throw StateError('Main window did not save detail preferences');
     }
 
-    return isStandalone ? saveStandaloneChanges(save) : save();
+    return isStandalone ? _queueWindowSave(save) : save();
   }
 
   static Future<T?> invokeMethod<T>(Object windowId, String method, [dynamic arguments]) async {
@@ -619,6 +784,83 @@ class DesktopMultiWindow {
         return null;
       default:
         return _handleMethodCall(call);
+    }
+  }
+}
+
+class _StandaloneProcess {
+  final Process process;
+  final outputClosed = Completer<void>();
+  bool processExited = false;
+  late final Future<int> exited = process.exitCode.then((code) async {
+    processExited = true;
+    await outputClosed.future;
+    return code;
+  });
+  int? _attempt;
+  Completer<void>? _reply;
+  bool _preparing = false;
+  bool _saved = false;
+  bool _exited = false;
+
+  _StandaloneProcess(this.process);
+
+  bool handleCloseMessage(Map<String, dynamic> message) {
+    if (message['closeSaved'] case final bool saved) {
+      _saved = saved;
+      return true;
+    }
+    if (message['closeAttempt'] case final int attempt) {
+      final reply = _reply;
+      if (_attempt == attempt && reply != null && !reply.isCompleted) {
+        if (message['closeError'] case final String error) {
+          reply.completeError(StateError(error));
+        } else if (_preparing && message['ready'] == true) {
+          reply.complete();
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> prepare(int attempt, Duration timeout) => _sendClose(attempt, DesktopMultiWindow._prepareClose, timeout);
+
+  Future<void> commit(int attempt, Duration timeout) => _sendClose(attempt, DesktopMultiWindow._commitClose, timeout);
+
+  Future<void> _sendClose(int attempt, String event, Duration timeout) async {
+    if (_exited) return;
+    final reply = Completer<void>();
+    _attempt = attempt;
+    _reply = reply;
+    _preparing = event == DesktopMultiWindow._prepareClose;
+    final result = Future.any<void>([
+      reply.future,
+      exited.then((code) {
+        if (code != 0 || !_saved) throw StateError('Tool ${process.pid} exited without confirming its save ($code)');
+        _exited = true;
+      }),
+    ]).timeout(timeout);
+    try {
+      DesktopMultiWindow._sendStandaloneEvent(this, event, attempt);
+    } catch (error, stackTrace) {
+      reply.completeError(error, stackTrace);
+    }
+    await result;
+  }
+
+  void finish(int attempt) {
+    if (_attempt != attempt) return;
+    _attempt = null;
+    _reply = null;
+  }
+
+  void cancel(int attempt) {
+    if (_attempt != attempt || _exited) return;
+    try {
+      DesktopMultiWindow._sendStandaloneEvent(this, DesktopMultiWindow._cancelClose, attempt);
+    } catch (error) {
+      logger.w('Could not cancel tool shutdown', error: error);
     }
   }
 }

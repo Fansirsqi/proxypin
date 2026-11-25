@@ -399,14 +399,14 @@ void main() {
         await themeWrite.future;
       }
     };
-    config.appFontScale = 1.25;
+    config.appFontScale = 0.75;
     final firstFlush = config.flushConfig();
     final failed = expectLater(firstFlush, throwsA(isA<FileSystemException>()));
     await firstStarted.future;
 
     final candidate = config.snapshotTheme('Queued');
     final saved = config.saveTheme(candidate);
-    config.appFontScale = 1.5;
+    config.appFontScale = 0.9;
     final lastFlush = config.flushConfig();
     expect(config.flushConfig(), same(lastFlush));
     expect(writes, hasLength(1));
@@ -417,15 +417,15 @@ void main() {
     expect(config.savedThemes, isEmpty);
     expect(config.themePreset, ThemePreset.custom);
     expect(writes[1]['activeSavedThemeName'], 'Queued');
-    expect(writes[1]['appFontScale'], 1.5);
-    config.appFontScale = 1.75;
+    expect(writes[1]['appFontScale'], 0.9);
+    config.appFontScale = 1.15;
     expect(config.flushConfig(), same(lastFlush));
     expect(writes, hasLength(2));
     themeWrite.complete();
 
     expect(await saved, isTrue);
     await lastFlush;
-    expect(writes.map((data) => data['appFontScale']), [1.25, 1.5, 1.75]);
+    expect(writes.map((data) => data['appFontScale']), [0.75, 0.9, 1.15]);
     expect(writes.last['activeSavedThemeName'], 'Queued');
     expect(config.themePreset, same(candidate));
   });

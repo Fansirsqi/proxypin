@@ -72,6 +72,15 @@ class SystemProxy {
     await instance._setSystemProxy(port, sslSetting, proxyPassDomains);
   }
 
+  static Future<void> updatePort(int port, bool sslSetting, String proxyPassDomains) {
+    RangeError.checkValueInInterval(port, 1, 65535, 'port');
+    final proxy = instance;
+    if (proxy is LinuxSystemProxy) {
+      return proxy._setSystemProxy(port, sslSetting, proxyPassDomains, checkExitCode: true);
+    }
+    return proxy._setSystemProxy(port, sslSetting, proxyPassDomains);
+  }
+
   ///设置Https代理启用状态
   static void setSslProxyEnable(bool proxyEnable, port) {
     instance._setSslProxyEnable(proxyEnable, port);
@@ -371,14 +380,66 @@ class WindowsSystemProxy extends SystemProxy {
 }
 
 class LinuxSystemProxy extends SystemProxy {
+  static const _gnomeProxy = 'org.gnome.system.proxy';
+
+  bool get _isKde => Platform.environment['XDG_CURRENT_DESKTOP']?.split(':').contains('KDE') ?? false;
+
   @override
-  Future<void> _setSystemProxy(int port, bool sslSetting, String proxyPassDomains) async {
-    ProxyManager manager = ProxyManager();
+  Future<void> _setSystemProxy(int port, bool sslSetting, String proxyPassDomains, {bool checkExitCode = false}) async {
+    final protocols = ['http', if (sslSetting) 'https'];
+    await _writeSettings([
+      for (final protocol in protocols) ...[
+        ['gsettings', 'set', '$_gnomeProxy.$protocol', 'host', '127.0.0.1'],
+        ['gsettings', 'set', '$_gnomeProxy.$protocol', 'port', '$port'],
+      ],
+      ['gsettings', 'set', _gnomeProxy, 'mode', 'manual'],
+      if (_isKde) ...[
+        for (final protocol in protocols) _kdeSetting('${protocol}Proxy', '$protocol://127.0.0.1:$port'),
+        _kdeSetting('ProxyType', '1'),
+      ],
+    ], checkExitCode: checkExitCode);
+  }
 
-    await manager.setAsSystemProxy(ProxyTypes.http, "127.0.0.1", port);
-    if (sslSetting) await manager.setAsSystemProxy(ProxyTypes.https, "127.0.0.1", port);
+  @override
+  Future<void> _setProxyEnable(bool proxyEnable, bool sslSetting) => _writeSettings([
+        ['gsettings', 'set', _gnomeProxy, 'mode', 'none'],
+        if (_isKde) _kdeSetting('ProxyType', '0'),
+      ]);
 
-    SystemProxy.setProxyPassDomains(proxyPassDomains);
+  List<String> _kdeSetting(String key, String value) {
+    final xdgConfig = Platform.environment['XDG_CONFIG_HOME'];
+    final configDir = xdgConfig == null || xdgConfig.isEmpty ? '${Platform.environment['HOME']}/.config' : xdgConfig;
+    return ['kwriteconfig5', '--file', '$configDir/kioslaverc', '--group', 'Proxy Settings', '--key', key, value];
+  }
+
+  Future<void> _writeSettings(List<List<String>> commands, {bool checkExitCode = false}) async {
+    ProcessException? firstError;
+    for (final command in commands) {
+      try {
+        await _writeSetting(command.first, command.sublist(1));
+      } on ProcessException catch (error, stackTrace) {
+        firstError ??= error;
+        logger.e('Could not write Linux system proxy settings', error: error, stackTrace: stackTrace);
+      }
+    }
+    if (checkExitCode && firstError != null) throw firstError;
+  }
+
+  Future<void> _writeSetting(String executable, List<String> arguments) async {
+    final optionalGsettings = _isKde && executable == 'gsettings';
+    ProcessResult result;
+    try {
+      result = await Process.run(executable, arguments, environment: {'LC_ALL': 'C'});
+    } on ProcessException catch (error) {
+      if (error.errorCode != 2) rethrow;
+      if (optionalGsettings) return;
+      if (executable != 'kwriteconfig5') rethrow;
+      executable = 'kwriteconfig6';
+      result = await Process.run(executable, arguments);
+    }
+    final stderr = result.stderr.toString().trim();
+    if (result.exitCode == 0 || (optionalGsettings && stderr.startsWith('No such schema '))) return;
+    throw ProcessException(executable, arguments, stderr, result.exitCode);
   }
 
   ///linux 获取代理

@@ -1624,12 +1624,10 @@ class AppLocalizationsVi extends AppLocalizations {
   String get captureListDensitySubtitle => 'Điều chỉnh chiều cao các hàng trong danh sách thu thập';
 
   @override
-  String get alwaysShowCaptureRowDetails => 'Luôn hiển thị dòng thứ hai';
+  String get showCaptureRowDetails => 'Hiện thông tin bổ sung của yêu cầu';
 
   @override
-  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
-    return 'Hiển thị trạng thái, giờ và thời lượng ngay cả dưới $threshold%';
-  }
+  String get showCaptureRowDetailsSubtitle => 'Hiện trạng thái, thời gian và thời lượng trong danh sách ghi lại';
 
   @override
   String get densityComfortable => 'Thoáng';
