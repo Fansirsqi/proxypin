@@ -98,6 +98,7 @@ class _DesktopStatusBarState extends State<DesktopStatusBar> {
 
   @override
   Widget build(BuildContext context) {
+    AppDisplaySettings.of(context);
     var localizations = AppLocalizations.of(context)!;
     var theme = Theme.of(context);
     var running = SocketLaunch.startStatus.value.get() == true;

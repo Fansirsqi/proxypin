@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:code_forge/code_forge.dart';
-import 'package:re_highlight/styles/monokai-sublime.dart';
 import 'package:proxypin/ui/component/code_style.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:proxypin/ui/component/search/finder.dart';
 import 'package:re_highlight/languages/javascript.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
@@ -56,12 +56,10 @@ async function onRequest(context, request) {
   Widget build(BuildContext context) {
     return SizedBox(
         height: 330,
-        child: CodeForge(
+        child: ThemedCodeEditor(
           controller: script,
           autoFocus: true,
-          enableGuideLines: false,
           language: langJavascript,
-          editorTheme: monokaiSublimeTheme,
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
           textStyle: codeTextStyle(context, size: 13),
         ));

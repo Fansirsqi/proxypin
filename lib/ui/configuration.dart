@@ -16,6 +16,7 @@
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -221,6 +222,30 @@ enum DetailTabLabelAlignment { top, center, bottom }
 
 enum HeaderDensity { comfortable, compact, dense }
 
+enum DisplayDensitySetting { interface, captureList }
+
+class _DisplayDensity {
+  static const double legacyDense = 60;
+
+  double committed = AppConfiguration.defaultDisplayDensity;
+  double? preview;
+
+  double get value => preview ?? committed;
+
+  set value(double density) {
+    committed = fromConfig(density);
+    preview = null;
+  }
+
+  static double fromConfig(Object? value) => switch (value) {
+        'compact' => 80,
+        'dense' => legacyDense,
+        final num percent when percent.isFinite =>
+          percent.clamp(AppConfiguration.minimumDisplayDensity, AppConfiguration.maximumDisplayDensity).toDouble(),
+        _ => AppConfiguration.defaultDisplayDensity,
+      };
+}
+
 enum WindowCloseAction {
   ask,
   minimize,
@@ -348,8 +373,15 @@ class AppConfiguration {
   /// 清空抓包前确认
   bool clearConfirm = false;
 
-  /// 抓包列表行密度：comfortable(宽松，默认) / compact(紧凑) / dense(极紧凑)
-  String captureListDensity = "comfortable";
+  /// 抓包列表行密度百分比
+  final _captureDensity = _DisplayDensity();
+  double get captureListDensity => _captureDensity.value;
+  set captureListDensity(double value) => _captureDensity.value = value;
+
+  static const int captureRowDetailsThreshold = 40;
+  bool alwaysShowCaptureRowDetails = false;
+  bool get compactCaptureRows => captureListDensity < captureRowDetailsThreshold;
+  bool get showCaptureRowDetails => alwaysShowCaptureRowDetails || !compactCaptureRows;
 
   /// 代码窗口字体族（请求体/响应体/脚本编辑器等），null 或空表示跟随界面字体
   String? editorFontFamily;
@@ -357,14 +389,18 @@ class AppConfiguration {
   /// 代码窗口字号
   double editorFontSize = 13;
 
+  EditorColorScheme editorColorScheme = EditorColorScheme.followTheme;
+
   /// 整体界面字体（不含代码窗口），null/空表示跟随系统默认字体
   String? appFontFamily;
 
   /// 整体界面字号缩放（0.85 - 1.25，1.0 = 原样）
   double appFontScale = 1.0;
 
-  /// 整体界面密度：comfortable(默认) / compact / dense
-  String uiDensity = "comfortable";
+  /// 整体界面密度百分比
+  final _interfaceDensity = _DisplayDensity();
+  double get uiDensity => _interfaceDensity.value;
+  set uiDensity(double value) => _interfaceDensity.value = value;
 
   //桌面window大小
   Size? windowSize;
@@ -406,76 +442,68 @@ class AppConfiguration {
 
   final ValueNotifier<List<String>> toolbarPins = ValueNotifier(defaultToolbarPins);
 
-  /// 抓包列表可选的密度
-  static const List<String> captureDensities = ["comfortable", "compact", "dense"];
+  static const double minimumDisplayDensity = 25;
+  static const double defaultDisplayDensity = 100;
+  static const double maximumDisplayDensity = 300;
+
+  void setDisplayDensity(DisplayDensitySetting setting, double value, {required bool commit}) {
+    value = _DisplayDensity.fromConfig(value);
+    final density = switch (setting) {
+      DisplayDensitySetting.interface => _interfaceDensity,
+      DisplayDensitySetting.captureList => _captureDensity,
+    };
+    final previous = density.value;
+    final needsWrite = commit && value != density.committed;
+    if (commit) {
+      density.value = value;
+    } else {
+      density.preview = value;
+    }
+    if (density.value != previous) globalChange.value = !globalChange.value;
+    if (needsWrite) flushConfig();
+  }
 
   /// 抓包列表行的尺寸参数：由 [captureListDensity] 推导
-  CaptureRowMetrics get captureRowMetrics {
-    switch (captureListDensity) {
-      case "compact":
-        return const CaptureRowMetrics(
-            leftWithDomain: 10,
-            leftIndent: 22,
-            leftSelection: 4,
-            right: 8,
-            top: 3,
-            bottom: 3,
-            titleSize: 12.5,
-            metaSize: 10.5,
-            titleMaxLines: 1,
-            showMeta: true,
-            gap: 1,
-            iconGap: 8,
-            iconWidth: 16,
-            iconSize: 14,
-            imageSize: 16);
-      case "dense":
-        return const CaptureRowMetrics(
-            leftWithDomain: 8,
-            leftIndent: 18,
-            leftSelection: 3,
-            right: 6,
-            top: 1.5,
-            bottom: 1.5,
-            titleSize: 12,
-            metaSize: 10,
-            titleMaxLines: 1,
-            showMeta: false,
-            gap: 0,
-            iconGap: 6,
-            iconWidth: 14,
-            iconSize: 12,
-            imageSize: 14);
-      default:
-        return const CaptureRowMetrics(
-            leftWithDomain: 12,
-            leftIndent: 26,
-            leftSelection: 6,
-            right: 10,
-            top: 7,
-            bottom: 7,
-            titleSize: 13,
-            metaSize: 11,
-            titleMaxLines: 2,
-            showMeta: true,
-            gap: 3,
-            iconGap: 10,
-            iconWidth: 18,
-            iconSize: 16,
-            imageSize: 19);
+  double get captureDensityFactor => _densityFactor(captureListDensity, minimum: -0.25, maximum: 6);
+
+  static double _densityFactor(double percent, {required double minimum, required double maximum}) {
+    const dense = _DisplayDensity.legacyDense;
+    if (percent < dense) {
+      final progress = (percent - minimumDisplayDensity) / (dense - minimumDisplayDensity);
+      return lerpDouble(minimum, 0, progress)!;
     }
+    if (percent <= defaultDisplayDensity) {
+      return (percent - dense) / (defaultDisplayDensity - dense);
+    }
+    final progress = (percent - defaultDisplayDensity) / (maximumDisplayDensity - defaultDisplayDensity);
+    return lerpDouble(1, maximum, progress)!;
+  }
+
+  CaptureRowMetrics get captureRowMetrics {
+    final factor = captureDensityFactor;
+    double size(double min, double max) => lerpDouble(min, max, factor)!;
+    return CaptureRowMetrics(
+      leftWithDomain: size(8, 12),
+      leftIndent: size(18, 26),
+      leftSelection: size(3, 6),
+      right: size(6, 10),
+      top: size(1.5, 7),
+      bottom: size(1.5, 7),
+      titleSize: size(12, 13),
+      metaSize: size(10, 11),
+      gap: size(0, 3).clamp(0.0, double.infinity),
+      iconGap: size(6, 10),
+      iconWidth: size(14, 18),
+      iconSize: size(12, 16),
+      imageSize: size(14, 19),
+    );
   }
 
   /// 整体界面密度 → Flutter 的 VisualDensity
   VisualDensity get visualDensity {
-    switch (uiDensity) {
-      case "compact":
-        return const VisualDensity(horizontal: -1, vertical: -1);
-      case "dense":
-        return const VisualDensity(horizontal: -2, vertical: -2);
-      default:
-        return VisualDensity.standard;
-    }
+    final factor = _densityFactor(uiDensity, minimum: -1, maximum: 3);
+    final spacing = lerpDouble(-2, 0, factor)!;
+    return VisualDensity(horizontal: spacing, vertical: spacing);
   }
 
   /// 修改显示类配置后立即重建界面并落盘
@@ -634,6 +662,7 @@ class AppConfiguration {
 
   Map<String, dynamic> get themeSettings => {
         ..._theme.toJson(),
+        'editorColorScheme': editorColorScheme.name,
         if (_theme.saved case final saved?) 'activeSavedTheme': saved.encoded,
       };
 
@@ -647,6 +676,7 @@ class AppConfiguration {
       }
     }
     _theme = theme;
+    editorColorScheme = EditorColorScheme.fromConfig(settings['editorColorScheme']);
     globalChange.value = !globalChange.value;
   }
 
@@ -716,21 +746,20 @@ class AppConfiguration {
       autoReadEnabled = config['autoReadEnabled'] ?? true;
       clearConfirm = config['clearConfirm'] ?? false;
 
-      var density = config['captureListDensity'];
-      captureListDensity = density is String && captureDensities.contains(density) ? density : "comfortable";
+      captureListDensity = _DisplayDensity.fromConfig(config['captureListDensity']);
+      alwaysShowCaptureRowDetails = config['alwaysShowCaptureRowDetails'] == true;
 
       var fontFamily = config['editorFontFamily'];
       editorFontFamily = fontFamily is String && fontFamily.trim().isNotEmpty ? fontFamily.trim() : null;
       var fontSize = config['editorFontSize'];
       editorFontSize = fontSize is num && fontSize >= 8 && fontSize <= 32 ? fontSize.toDouble() : 13;
+      editorColorScheme = EditorColorScheme.fromConfig(config['editorColorScheme']);
 
       var appFont = config['appFontFamily'];
       appFontFamily = appFont is String && appFont.trim().isNotEmpty ? appFont.trim() : null;
       var appScale = config['appFontScale'];
       appFontScale = appScale is num && appScale >= 0.85 && appScale <= 1.25 ? appScale.toDouble() : 1.0;
-      var uiDensityValue = config['uiDensity'];
-      uiDensity =
-          uiDensityValue is String && captureDensities.contains(uiDensityValue) ? uiDensityValue : "comfortable";
+      uiDensity = _DisplayDensity.fromConfig(config['uiDensity']);
 
       windowSize =
           config['windowSize'] == null ? null : Size(config['windowSize']['width'], config['windowSize']['height']);
@@ -869,12 +898,14 @@ class AppConfiguration {
       ..._detailPreferences,
       "autoReadEnabled": autoReadEnabled,
       "clearConfirm": clearConfirm,
-      "captureListDensity": captureListDensity,
+      "captureListDensity": _captureDensity.committed,
+      "alwaysShowCaptureRowDetails": alwaysShowCaptureRowDetails,
       "editorFontFamily": editorFontFamily,
       "editorFontSize": editorFontSize,
+      "editorColorScheme": editorColorScheme.name,
       "appFontFamily": appFontFamily,
       "appFontScale": appFontScale,
-      "uiDensity": uiDensity,
+      "uiDensity": _interfaceDensity.committed,
       if (memoryCleanupThreshold != null) 'memoryCleanupThreshold': memoryCleanupThreshold,
       if (Platforms.isMobile()) 'pipEnabled': pipEnabled.value,
       if (Platforms.isMobile()) 'pipIcon': pipIcon.value ? true : null,
@@ -909,8 +940,6 @@ class CaptureRowMetrics {
   final double bottom;
   final double titleSize;
   final double metaSize;
-  final int titleMaxLines;
-  final bool showMeta;
   final double gap;
   final double iconGap;
   final double iconWidth;
@@ -926,8 +955,6 @@ class CaptureRowMetrics {
     required this.bottom,
     required this.titleSize,
     required this.metaSize,
-    required this.titleMaxLines,
-    required this.showMeta,
     required this.gap,
     required this.iconGap,
     required this.iconWidth,

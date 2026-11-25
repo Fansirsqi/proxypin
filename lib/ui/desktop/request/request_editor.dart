@@ -22,7 +22,7 @@ import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:proxypin/ui/component/theme_presets.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/channel/host_port.dart';
@@ -641,7 +641,6 @@ class _HttpState extends State<_HttpWidget> {
     final isNone = _bodyLanguage == _BodyLanguage.none;
     final ct = _bodyLanguageToContentType[_bodyLanguage];
     final language = ct == null ? null : HighlightLanguages.getLanguage(ct);
-    final editorTheme = codeEditorTheme(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8, right: 10, bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -657,18 +656,11 @@ class _HttpState extends State<_HttpWidget> {
                 )
               : Container(
                   decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
-                  child: CodeForge(
-                    // CodeForge 把 language 当作 late final 在 initState 里固定，
-                    // 切换数据类型后必须靠新的 key 重建组件才能让高亮实时生效；
-                    // controller 由本 State 持有，重建不会丢文本。
-                    key: ValueKey((_bodyLanguage, _bodyWrap, editorTheme['root'])),
+                  child: ThemedCodeEditor(
                     controller: body!,
                     autoFocus: true,
                     lineWrap: _bodyWrap,
                     language: language,
-                    enableGuideLines: false,
-                    selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
-                    editorTheme: editorTheme,
                     textStyle: codeTextStyle(context, size: 14.2),
                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
                   ),

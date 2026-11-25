@@ -4,17 +4,18 @@ import 'package:re_highlight/languages/json.dart';
 import 'package:re_highlight/languages/xml.dart';
 import 'package:re_highlight/languages/css.dart';
 import 'package:re_highlight/languages/http.dart';
+import 'package:re_highlight/languages/yaml.dart';
 
 import 'package:re_highlight/re_highlight.dart';
 
 class HighlightLanguages {
-
   static Map<ContentType, Mode?> languages = {
     ContentType.json: langJson,
     ContentType.js: langJavascript,
     ContentType.html: langXml,
     ContentType.xml: langXml,
     ContentType.css: langCss,
+    ContentType.yaml: langYaml,
     ContentType.formUrl: langHttp,
   };
 

@@ -9,10 +9,10 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/ui/component/search/highlight_text.dart';
 import 'package:proxypin/ui/component/search/search_field.dart';
-import 'package:proxypin/ui/component/search/virtualized_highlight_text.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/body.dart';
 import 'package:proxypin/ui/content/panel.dart';
+import 'package:proxypin/ui/content/read_only_body.dart';
 
 const desktop = TargetPlatformVariant({TargetPlatform.linux});
 
@@ -21,15 +21,15 @@ void main() {
     final text = List.generate(400, (index) => 'entry $index').join('\n');
     await _openDetail(tester, 'text/plain', utf8.encode(text), requestHasBody: true, initialTab: 1);
 
-    final code = find.byType(VirtualizedHighlightText);
+    final code = find.byType(ReadOnlyBody);
     final codeScroll = find.descendant(of: code, matching: find.byType(Scrollable));
     for (final tab in ['Request', 'Response', 'Overview']) {
       await tester.tap(find.text(tab));
       await tester.pumpAndSettle();
       final offset = tester.getCenter(code);
-      final position = tester.state<ScrollableState>(codeScroll.first).position;
-      final style = tester.widget<VirtualizedHighlightText>(code).style!;
-      double fontSize() => MediaQuery.textScalerOf(tester.element(code)).scale(style.fontSize!);
+      double scrollOffset() => tester.state<ScrollableState>(codeScroll.first).position.pixels;
+      final style = tester.widget<ReadOnlyBody>(code).style;
+      double fontSize() => MediaQuery.textScalerOf(tester.element(codeScroll.first)).scale(style.fontSize!);
       final initialSize = fontSize();
 
       void scroll(double delta) => tester.binding.handlePointerEvent(
@@ -43,19 +43,20 @@ void main() {
       scroll(100);
       await tester.pumpAndSettle();
       expect(fontSize(), closeTo(initialSize, 0.001));
-      expect(position.pixels, 0);
-      expect(tester.widget<VirtualizedHighlightText>(code).style, style);
+      expect(scrollOffset(), 0);
+      expect(tester.widget<ReadOnlyBody>(code).style, style);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 
       scroll(120);
       await tester.pumpAndSettle();
-      expect(position.pixels, greaterThan(0));
+      expect(scrollOffset(), greaterThan(0));
       expect(fontSize(), closeTo(initialSize, 0.001));
     }
   }, variant: desktop);
 
   testWidgets('Ctrl-wheel also scales selectable text in a short body', (tester) async {
     await _openDetail(tester, 'text/plain', utf8.encode('Short response'), initialTab: 2);
+    expect(find.byType(ReadOnlyBody), findsOneWidget);
     final body = find.byType(HighlightTextWidget);
     final text = find.descendant(of: body, matching: find.byType(EditableText));
     final size = tester.widget<EditableText>(text).style.fontSize!;
@@ -95,12 +96,12 @@ void main() {
     }
 
     final text = find.descendant(of: body, matching: find.byType(HighlightTextWidget));
-    final plain = tester.widget<HighlightTextWidget>(text);
-    expect(plain.language, isNull);
-    await tester.tap(find.text('CSS'));
-    await tester.pumpAndSettle();
     final highlighted = tester.widget<HighlightTextWidget>(text);
     expect(highlighted.language, 'css');
+    await tester.tap(find.text('Text'));
+    await tester.pumpAndSettle();
+    final plain = tester.widget<HighlightTextWidget>(text);
+    expect(plain.language, isNull);
     expect(highlighted.style, plain.style);
     expect(highlighted.style?.fontFamily, 'Body Test');
     expect(tester.takeException(), isNull);
@@ -112,9 +113,10 @@ void main() {
     final json = jsonEncode(List.generate(2400, (index) => 'Line $index ${'content ' * 7}'));
     await _openDetail(tester, 'application/json', utf8.encode(json), panelHeight: size);
 
-    final preview = find.byType(VirtualizedHighlightText);
-    await _waitForPreview(tester, preview);
-    final overview = tester.widget<VirtualizedHighlightText>(preview);
+    final preview = find.byType(ReadOnlyBody);
+    final firstChunk = find.byKey(const ValueKey('virtualized-code-chunk-0'));
+    await _waitForPreview(tester, firstChunk);
+    final overview = tester.widget<ReadOnlyBody>(preview);
     final compact = tester.getSize(preview).height;
     expect(overview.language, 'json');
     size.value = 760;
@@ -123,8 +125,8 @@ void main() {
 
     await tester.tap(find.text('Response'));
     await tester.pumpAndSettle();
-    await _waitForPreview(tester, preview);
-    final response = tester.widget<VirtualizedHighlightText>(preview);
+    await _waitForPreview(tester, firstChunk);
+    final response = tester.widget<ReadOnlyBody>(preview);
     expect(response.language, overview.language);
     expect(response.style, overview.style);
     expect(response.text, overview.text);
@@ -135,11 +137,12 @@ void main() {
     final text = List.generate(400, (index) => 'entry ${index + 1}').join('\n');
     await _openDetail(tester, 'text/plain', utf8.encode(text), requestHasBody: true, initialTab: 1);
 
-    final preview = find.byType(VirtualizedHighlightText);
+    final preview = find.byType(ReadOnlyBody);
     final firstChunk = find.byKey(const ValueKey('virtualized-code-chunk-0'));
     final lastChunk = find.byKey(const ValueKey('virtualized-code-chunk-16'));
-    final request = tester.widget<VirtualizedHighlightText>(preview);
+    final request = tester.widget<ReadOnlyBody>(preview);
     expect(request.text, text);
+    expect(request.virtualized, isTrue);
     expect(firstChunk, findsOneWidget);
     expect(lastChunk, findsNothing);
     final bodyScroll = find.descendant(of: preview, matching: find.byType(Scrollable));
@@ -149,10 +152,10 @@ void main() {
     for (final tab in ['Response', 'Overview']) {
       await tester.tap(find.text(tab));
       await tester.pumpAndSettle();
-      final body = tester.widget<VirtualizedHighlightText>(preview);
+      final body = tester.widget<ReadOnlyBody>(preview);
       expect(body.text, request.text);
       expect(body.style, request.style);
-      expect(body.chunkLines, request.chunkLines);
+      expect(body.virtualized, isTrue);
       expect(firstChunk, findsOneWidget);
     }
     expect(tester.takeException(), isNull);
@@ -170,10 +173,10 @@ void main() {
       contentEncoding: 'gzip',
     );
 
-    final preview = find.byType(VirtualizedHighlightText);
+    final preview = find.byType(ReadOnlyBody);
     final firstChunk = find.byKey(const ValueKey('virtualized-code-chunk-0'));
     await _waitForPreview(tester, firstChunk);
-    expect(tester.widget<VirtualizedHighlightText>(preview).text, 'payload=${lines.join('\n')}');
+    expect(tester.widget<ReadOnlyBody>(preview).text, 'payload=${lines.join('\n')}');
 
     await tester.tap(find.byTooltip('Search'));
     await tester.pumpAndSettle();
@@ -187,7 +190,7 @@ void main() {
     await tester.tap(find.text('Text'));
     await tester.pumpAndSettle();
     await _waitForPreview(tester, firstChunk);
-    expect(tester.widget<VirtualizedHighlightText>(preview).text, raw);
+    expect(tester.widget<ReadOnlyBody>(preview).text, raw);
     expect(tester.takeException(), isNull);
   }, variant: desktop);
 
@@ -230,17 +233,17 @@ void main() {
       requestHasBody: true,
       configuration: configuration,
     );
-    final preview = find.byType(VirtualizedHighlightText);
+    final preview = find.byType(ReadOnlyBody);
     configuration.editorFontFamily = 'Custom Code Test';
     configuration.editorFontSize = 17;
     configuration.globalChange.value = !configuration.globalChange.value;
     await tester.pumpAndSettle();
-    expect(tester.widget<VirtualizedHighlightText>(preview).style?.fontFamily, 'Custom Code Test');
+    expect(tester.widget<ReadOnlyBody>(preview).style.fontFamily, 'Custom Code Test');
 
     for (final tab in ['Response', 'Overview', 'Request']) {
       await tester.tap(find.text(tab));
       await tester.pumpAndSettle();
-      final style = tester.widget<VirtualizedHighlightText>(preview).style!;
+      final style = tester.widget<ReadOnlyBody>(preview).style;
       expect(style.fontFamily, 'Custom Code Test');
       expect(style.fontSize, 17);
       expect(style.height, 1.4);

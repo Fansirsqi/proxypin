@@ -160,9 +160,7 @@ class _DesktopHomePagePageState extends State<DesktopHomePage> implements EventL
               decoration: BoxDecoration(
                   color: desktopChromeColor(theme),
                   border: Border(bottom: BorderSide(color: chromeBorderColor(theme), width: 1))),
-              child: Platform.isMacOS
-                  ? Toolbar(proxyServer, requestListStateKey)
-                  : WindowsToolbar(title: Toolbar(proxyServer, requestListStateKey)),
+              child: Platform.isMacOS ? Toolbar(proxyServer) : WindowsToolbar(title: Toolbar(proxyServer)),
             )),
         bottomNavigationBar:
             DesktopStatusBar(proxyServer: proxyServer, container: container, requestListStateKey: requestListStateKey),

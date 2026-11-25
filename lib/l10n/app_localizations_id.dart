@@ -1620,10 +1620,18 @@ class AppLocalizationsId extends AppLocalizations {
   String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
-  String get captureListDensity => 'Kepadatan daftar';
+  String get captureListDensity => 'Tinggi baris tangkapan';
 
   @override
-  String get captureListDensitySubtitle => 'Row height of captured requests';
+  String get captureListDensitySubtitle => 'Atur tinggi baris dalam daftar tangkapan';
+
+  @override
+  String get alwaysShowCaptureRowDetails => 'Selalu tampilkan baris kedua';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return 'Tampilkan status, waktu, dan durasi meski di bawah $threshold%';
+  }
 
   @override
   String get densityComfortable => 'Longgar';
@@ -1659,6 +1667,12 @@ class AppLocalizationsId extends AppLocalizations {
   String get codeFontSizeSubtitle => 'Font size of code editors';
 
   @override
+  String get editorColorScheme => 'Skema warna editor';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'Ikuti tema aplikasi';
+
+  @override
   String get appFont => 'Interface font';
 
   @override
@@ -1674,10 +1688,10 @@ class AppLocalizationsId extends AppLocalizations {
   String get appFontScaleSubtitle => 'Scale the whole UI text up or down';
 
   @override
-  String get uiDensity => 'Interface density';
+  String get uiDensity => 'Jarak antarelemen';
 
   @override
-  String get uiDensitySubtitle => 'Spacing of buttons, lists and menus';
+  String get uiDensitySubtitle => 'Atur jarak pada tombol, daftar, dan menu';
 
   @override
   String get noOutputHint => 'Click Run to see output here';

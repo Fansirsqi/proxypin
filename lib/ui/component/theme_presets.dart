@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proxypin/ui/configuration.dart' show AppDisplaySettings;
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
@@ -118,16 +119,58 @@ class ActiveThemePreset extends ThemeExtension<ActiveThemePreset> {
   ActiveThemePreset lerp(ActiveThemePreset? other, double t) => t < .5 ? this : other ?? this;
 }
 
+enum EditorColorScheme {
+  followTheme(),
+  atomOneDark(ThemePreset.atomOne, Brightness.dark),
+  atomOneLight(ThemePreset.atomOne, Brightness.light),
+  catppuccinMocha(ThemePreset.catppuccin, Brightness.dark),
+  catppuccinLatte(ThemePreset.catppuccin, Brightness.light);
+
+  final ThemePreset? preset;
+  final Brightness? brightness;
+
+  const EditorColorScheme([this.preset, this.brightness]);
+
+  String? get paletteLabel => preset?.label(brightness!);
+
+  static EditorColorScheme fromConfig(Object? value) =>
+      values.firstWhere((scheme) => scheme.name == value, orElse: () => followTheme);
+}
+
 Map<String, TextStyle> codeEditorTheme(BuildContext context) {
+  final preference = AppDisplaySettings.of(context)?.editorColorScheme ?? EditorColorScheme.followTheme;
   final theme = Theme.of(context);
-  final preset = ActiveThemePreset.of(context);
-  final syntax = preset.syntax(theme.brightness, scheme: theme.colorScheme);
-  if (preset == ThemePreset.custom && theme.brightness == Brightness.light) return syntax;
+  final preset = preference.preset ?? ActiveThemePreset.of(context);
+  final brightness = preference.brightness ?? theme.brightness;
+  final colors = preference.preset?.colorScheme(brightness) ?? theme.colorScheme;
+  final syntax = preset.syntax(brightness, scheme: colors);
+  final root = syntax['root']!;
+  final surface =
+      preset == ThemePreset.custom && brightness == Brightness.light ? root.backgroundColor! : colors.surface;
+  final foreground = _editorReadableColor(root.color!, colors.onSurface, surface);
 
   return {
-    ...syntax,
-    'root': syntax['root']!.copyWith(backgroundColor: theme.colorScheme.surface),
+    for (final entry in syntax.entries)
+      if (entry.key == 'root')
+        'root': root.copyWith(color: foreground, backgroundColor: surface)
+      else
+        entry.key: entry.value.color == null
+            ? entry.value
+            : entry.value.copyWith(
+                color: _editorReadableColor(entry.value.color!, foreground, entry.value.backgroundColor ?? surface)),
   };
+}
+
+Color _editorReadableColor(Color color, Color fallback, Color background) {
+  final luminance = background.computeLuminance();
+  bool readable(Color foreground) {
+    final text = foreground.computeLuminance();
+    return (text > luminance ? (text + .05) / (luminance + .05) : (luminance + .05) / (text + .05)) >= 4.5;
+  }
+
+  if (readable(color)) return color;
+  if (readable(fallback)) return fallback;
+  return luminance > .179 ? Colors.black : Colors.white;
 }
 
 class _PresetPalette {

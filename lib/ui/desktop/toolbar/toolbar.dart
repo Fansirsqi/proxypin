@@ -25,21 +25,16 @@ import 'package:proxypin/ui/desktop/toolbar/environment_switcher.dart';
 import 'package:proxypin/ui/desktop/toolbar/quick_tools.dart';
 import 'package:proxypin/ui/desktop/toolbar/weak_network_indicator.dart';
 import 'package:proxypin/ui/desktop/ssl/ssl.dart';
-import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/launch/launch.dart';
 import 'package:proxypin/utils/ip.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 
-import '../request/list.dart';
-
 /// @author wanghongen
 /// 2023/10/8
 class Toolbar extends StatefulWidget {
   final ProxyServer proxyServer;
-  final GlobalKey<DesktopRequestListState> requestListStateKey;
-
-  const Toolbar(this.proxyServer, this.requestListStateKey, {super.key});
+  const Toolbar(this.proxyServer, {super.key});
 
   @override
   State<StatefulWidget> createState() {
@@ -49,17 +44,6 @@ class Toolbar extends StatefulWidget {
 
 class _ToolbarState extends State<Toolbar> {
   AppLocalizations get localizations => AppLocalizations.of(context)!;
-
-  Future<void> _onClear() async {
-    if (AppConfiguration.current?.clearConfirm != true) {
-      widget.requestListStateKey.currentState?.clean();
-      return;
-    }
-
-    showConfirmDialog(context, title: localizations.clearConfirm, onConfirm: () {
-      widget.requestListStateKey.currentState?.clean();
-    });
-  }
 
   @override
   void initState() {
@@ -106,13 +90,6 @@ class _ToolbarState extends State<Toolbar> {
       Padding(padding: EdgeInsets.only(left: Platform.isMacOS ? 90 : 20)),
       SocketLaunch(proxyServer: widget.proxyServer, startup: widget.proxyServer.configuration.startup),
       const SizedBox(width: 6),
-      // 设计稿 .tbtn：32x32 点击盒（IconButton 默认 48 会把图标撑得太散）
-      IconButton(
-          tooltip: localizations.clear,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          padding: EdgeInsets.zero,
-          icon: SvgIcon('trash', size: 17, color: iconColor),
-          onPressed: _onClear),
       _sep(),
       SslWidget(proxyServer: widget.proxyServer), // SSL配置
       const SizedBox(width: 6),

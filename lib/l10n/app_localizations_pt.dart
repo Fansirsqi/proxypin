@@ -1624,10 +1624,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
-  String get captureListDensity => 'Densidade da lista';
+  String get captureListDensity => 'Altura das linhas de captura';
 
   @override
-  String get captureListDensitySubtitle => 'Row height of captured requests';
+  String get captureListDensitySubtitle => 'Ajuste a altura das linhas na lista de capturas';
+
+  @override
+  String get alwaysShowCaptureRowDetails => 'Sempre mostrar a segunda linha';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return 'Mostre o status, a hora e a duração mesmo abaixo de $threshold%';
+  }
 
   @override
   String get densityComfortable => 'Confortável';
@@ -1663,6 +1671,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get codeFontSizeSubtitle => 'Font size of code editors';
 
   @override
+  String get editorColorScheme => 'Esquema de cores do editor';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'Seguir o tema da aplicação';
+
+  @override
   String get appFont => 'Interface font';
 
   @override
@@ -1678,10 +1692,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appFontScaleSubtitle => 'Scale the whole UI text up or down';
 
   @override
-  String get uiDensity => 'Interface density';
+  String get uiDensity => 'Espaçamento da interface';
 
   @override
-  String get uiDensitySubtitle => 'Spacing of buttons, lists and menus';
+  String get uiDensitySubtitle => 'Ajuste o espaçamento em botões, listas e menus';
 
   @override
   String get noOutputHint => 'Click Run to see output here';
@@ -2589,4 +2603,7 @@ class AppLocalizationsPtBr extends AppLocalizationsPt {
 
   @override
   String get overview => 'Visão geral';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'Seguir o tema do aplicativo';
 }

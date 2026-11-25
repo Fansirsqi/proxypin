@@ -26,8 +26,10 @@ import 'package:proxypin/network/http/http.dart';
 import 'package:proxypin/network/http/http_client.dart';
 import 'package:proxypin/ui/component/multi_select_controller.dart';
 import 'package:proxypin/ui/component/selection_action_bar.dart';
+import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
+import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/content/panel.dart';
 import 'package:proxypin/ui/desktop/request/report_servers.dart';
 import 'package:proxypin/ui/desktop/request/request.dart';
@@ -139,7 +141,16 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
                       dividerColor: Colors.transparent,
                     ),
                     automaticallyImplyLeading: false,
-                    actions: [popupMenus()],
+                    actions: [
+                      IconButton(
+                        tooltip: localizations.clear,
+                        constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                        padding: EdgeInsets.zero,
+                        icon: SvgIcon('trash', size: 17, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        onPressed: _confirmClear,
+                      ),
+                      popupMenus(),
+                    ],
                   ),
                   body: Padding(
                       padding: const EdgeInsets.only(right: 2),
@@ -211,6 +222,16 @@ class DesktopRequestListState extends State<DesktopRequestListWidget> with Autom
 
   bool _isTextInputFocused() {
     return FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+  }
+
+  void _confirmClear() {
+    if (AppDisplaySettings.of(context)?.clearConfirm == true) {
+      showConfirmDialog(context, title: localizations.clearConfirm, onConfirm: () {
+        if (mounted) clean();
+      });
+    } else {
+      clean();
+    }
   }
 
   Widget popupMenus() {

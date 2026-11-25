@@ -297,8 +297,10 @@
   "pause": "Pausar",
   "resume": "Reanudar",
   "overview": "Vista general",
-  "captureListDensity": "Densidad de la lista",
-  "captureListDensitySubtitle": "Altura de cada fila capturada",
+  "captureListDensity": "Altura de fila de captura",
+  "captureListDensitySubtitle": "Ajusta la altura de las filas en la lista de capturas",
+  "alwaysShowCaptureRowDetails": "Mostrar siempre la segunda línea",
+  "alwaysShowCaptureRowDetailsSubtitle": "Muestra el estado, la hora y la duración incluso por debajo del {threshold} %",
   "densityComfortable": "Cómoda",
   "densityCompact": "Compacta",
   "densityDense": "Densa",
@@ -310,11 +312,13 @@
   "codeFontFamily": "Familia tipográfica",
   "codeFontSize": "Tamaño de fuente del código",
   "codeFontSizeSubtitle": "Tamaño de fuente de los editores de código",
+  "editorColorScheme": "Esquema de colores del editor",
+  "editorColorSchemeFollowTheme": "Seguir el tema de la aplicación",
   "appFont": "Fuente de la interfaz",
   "appFontSubtitle": "Fuente de toda la interfaz (las ventanas de código usan su propio ajuste)",
   "appFontSystem": "Predeterminada del sistema",
   "appFontScale": "Escala de fuente de la interfaz",
   "appFontScaleSubtitle": "Escala el texto de toda la interfaz",
-  "uiDensity": "Densidad de la interfaz",
-  "uiDensitySubtitle": "Espaciado de botones, listas y menús"
+  "uiDensity": "Espaciado de la interfaz",
+  "uiDensitySubtitle": "Ajusta el espaciado en botones, listas y menús"
 }

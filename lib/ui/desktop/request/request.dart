@@ -177,10 +177,6 @@ class _RequestWidgetState extends State<RequestWidget> {
     var operationName = request.graphqlOperationName;
     String path = widget.displayDomain ? request.domainPath : request.path;
 
-    var time = formatDate(request.requestTime, [HH, ':', nn, ':', ss]);
-    String contentType = response?.contentType.name.toUpperCase() ?? '';
-    var packagesSize = getPackagesSize(request, response);
-
     var requestColor = color(path);
     bool selectedInSelectionMode = widget.multiSelectController.contains(request.requestId);
     bool selected = _selected || selectedInSelectionMode;
@@ -188,23 +184,25 @@ class _RequestWidgetState extends State<RequestWidget> {
     // 内容沿用旧版（类型图标 + 「METHOD path」标题 + 「#编号 时间 - [状态] 类型 大小 耗时」副行 + 右侧 app 图标）。
     // Material+InkWell：hover/水波纹由组件自身处理，不触发整行 setState 重建
     //（之前 MouseRegion+setState 会让图片缩略图每次 hover 都重新解码，闪烁且费性能）。
-    // 行密度来自偏好设置（抓包列表密度）：宽松 / 紧凑 / 极紧凑
-    final metrics = (AppDisplaySettings.of(context)?.captureRowMetrics ?? const CaptureRowMetrics(
-        leftWithDomain: 12,
-        leftIndent: 26,
-        leftSelection: 6,
-        right: 10,
-        top: 7,
-        bottom: 7,
-        titleSize: 13,
-        metaSize: 11,
-        titleMaxLines: 2,
-        showMeta: true,
-        gap: 3,
-        iconGap: 10,
-        iconWidth: 18,
-        iconSize: 16,
-        imageSize: 19));
+    // 行密度来自偏好设置（抓包列表密度）
+    final display = AppDisplaySettings.of(context);
+    final showDetails = display?.showCaptureRowDetails ?? true;
+    final titleLines = display?.compactCaptureRows == true ? 1 : 2;
+    final metrics = (display?.captureRowMetrics ??
+        const CaptureRowMetrics(
+            leftWithDomain: 12,
+            leftIndent: 26,
+            leftSelection: 6,
+            right: 10,
+            top: 7,
+            bottom: 7,
+            titleSize: 13,
+            metaSize: 11,
+            gap: 3,
+            iconGap: 10,
+            iconWidth: 18,
+            iconSize: 16,
+            imageSize: 19));
 
     return Material(
         color: selected ? primarySoftBg(theme) : Colors.transparent,
@@ -236,7 +234,7 @@ class _RequestWidgetState extends State<RequestWidget> {
                   Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text.rich(
-                        maxLines: metrics.titleMaxLines,
+                        maxLines: titleLines,
                         overflow: TextOverflow.ellipsis,
                         TextSpan(children: [
                           TextSpan(text: '${request.method.name} '),
@@ -244,24 +242,9 @@ class _RequestWidgetState extends State<RequestWidget> {
                           if (operationName != null) graphqlOperationSpan(request, fixAutoLines: true)!,
                         ]),
                         style: TextStyle(fontSize: metrics.titleSize, height: 1.25, color: requestColor)),
-                    if (metrics.showMeta) ...[
+                    if (showDetails) ...[
                       SizedBox(height: metrics.gap),
-                      Text.rich(
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          TextSpan(children: [
-                            TextSpan(
-                                text: '#${widget.index} ',
-                                style: TextStyle(fontSize: metrics.metaSize, color: Colors.teal)),
-                            TextSpan(
-                                text: '$time - ', style: TextStyle(fontSize: metrics.metaSize, color: text3Color(theme))),
-                            TextSpan(
-                                text: '[${response?.status.code ?? ''}]',
-                                style: TextStyle(fontSize: metrics.metaSize, color: text3Color(theme))),
-                            TextSpan(
-                                text: '  $contentType $packagesSize ${response?.costTime() ?? ''}',
-                                style: TextStyle(fontSize: metrics.metaSize, color: text3Color(theme))),
-                          ])),
+                      _buildRowDetails(theme, response, metrics.metaSize),
                     ],
                   ])),
                   if (widget.trailing != null) ...[
@@ -271,6 +254,26 @@ class _RequestWidgetState extends State<RequestWidget> {
                         child: widget.trailing!),
                   ],
                 ]))));
+  }
+
+  Widget _buildRowDetails(ThemeData theme, HttpResponse? response, double fontSize) {
+    final request = widget.request;
+    final time = formatDate(request.requestTime, [HH, ':', nn, ':', ss]);
+    final contentType = response?.contentType.name.toUpperCase() ?? '';
+    final packagesSize = getPackagesSize(request, response);
+    return Text.rich(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      TextSpan(
+        style: TextStyle(fontSize: fontSize, color: text3Color(theme)),
+        children: [
+          TextSpan(text: '#${widget.index} ', style: const TextStyle(color: Colors.teal)),
+          TextSpan(
+              text:
+                  '$time - [${response?.status.code ?? ''}]  $contentType $packagesSize ${response?.costTime() ?? ''}'),
+        ],
+      ),
+    );
   }
 
   Color? color(String url) {
@@ -374,7 +377,7 @@ class _RequestWidgetState extends State<RequestWidget> {
         await _copyText(curlRequest(widget.request));
         break;
       case _RequestMenuAction.openNewWindow:
-        openDetailInNewWindow();
+        await openDetailInNewWindow();
         break;
       case _RequestMenuAction.repeat:
         onRepeat(widget.request);
@@ -589,8 +592,8 @@ class _RequestWidgetState extends State<RequestWidget> {
   }
 
   // 新窗口打开详情
-  void openDetailInNewWindow() async {
-    MultiWindow.openWindow(
+  Future<void> openDetailInNewWindow() {
+    return MultiWindow.openToolWindow(
       localizations.captureDetail,
       'RequestDetailPage',
       args: {

@@ -16,6 +16,7 @@
 
 import 'dart:collection';
 import 'dart:io';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -539,22 +540,18 @@ class _DomainRequestsState extends State<DomainRequests> {
   @override
   Widget build(BuildContext context) {
     // 收起时不构建子行（Offstage 只是不绘制，仍会构建整棵子树——域名下几千个请求会全部常驻）
-    return Column(children: [
-      _hostWidget(widget.domain),
-      if (selected) Column(children: widget.body.toList())
-    ]);
+    return Column(children: [_hostWidget(widget.domain), if (selected) Column(children: widget.body.toList())]);
   }
 
   //domain title（结构沿用旧版：Material 箭头 + 域名 + 右侧 app 图标；无底色无分割线。
   //Material+InkWell：hover/水波纹由组件自身处理，不再 setState 重建子树）
   Widget _hostWidget(String title) {
     final theme = Theme.of(context);
-    final density = AppDisplaySettings.of(context)?.captureListDensity;
-    final (height, arrowWidth, arrowSize, appIconSize) = switch (density) {
-      'dense' => (24.0, 18.0, 14.0, 14.0),
-      'compact' => (32.0, 22.0, 16.0, 18.0),
-      _ => (40.0, 25.0, 18.0, 23.0),
-    };
+    final density = AppDisplaySettings.of(context)?.captureDensityFactor ?? 1;
+    final height = lerpDouble(24, 40, density)!;
+    final arrowWidth = lerpDouble(18, 25, density)!;
+    final arrowSize = lerpDouble(14, 18, density)!;
+    final appIconSize = lerpDouble(14, 23, density)!;
     var host = Material(
         color: Colors.transparent,
         child: InkWell(
@@ -693,6 +690,3 @@ class HostWidget extends StatelessWidget {
                 overflow: TextOverflow.ellipsis)));
   }
 }
-
-
-

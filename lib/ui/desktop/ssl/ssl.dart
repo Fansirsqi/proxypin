@@ -7,6 +7,7 @@ import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/crts.dart';
 import 'package:proxypin/network/util/logger.dart';
+import 'package:proxypin/ui/component/proxy_port_setting.dart';
 import 'package:proxypin/ui/component/svg_icon.dart';
 import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/configuration.dart';
@@ -58,9 +59,8 @@ class _SslState extends State<SslWidget> {
                       foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant),
                   icon: SvgIcon('lock',
                       size: 17,
-                      color: widget.proxyServer.enableSsl
-                          ? Theme.of(context).colorScheme.onSurfaceVariant
-                          : Colors.red),
+                      color:
+                          widget.proxyServer.enableSsl ? Theme.of(context).colorScheme.onSurfaceVariant : Colors.red),
                   label: const Text('HTTPS', style: TextStyle(fontSize: 12)),
                   onPressed: toggle));
         },
@@ -75,6 +75,15 @@ class _SslState extends State<SslWidget> {
               }
             },
           ),
+          if (!widget.settingsTile)
+            item('${localizations.port.trimRight()} ${widget.proxyServer.port}', onPressed: () async {
+              await showDialog<void>(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => ProxyPortDialog(proxyServer: widget.proxyServer),
+              );
+              if (mounted) setState(() {});
+            }),
           item(localizations.installCaLocal,
               onPressed: () => showDialog(context: context, builder: (context) => PCCert())),
           item("${localizations.installRootCa} iOS", onPressed: () async => iosCer(await localIp())),
@@ -194,8 +203,7 @@ class _SslState extends State<SslWidget> {
                               TextButton(onPressed: () => Navigator.pop(context), child: Text(localizations.cancel)),
                               TextButton(
                                 onPressed: () async {
-                                  String? path = (await Platforms.saveFileAdaptive(
-                                      fileName: "ProxyPinPkcs12.p12"));
+                                  String? path = (await Platforms.saveFileAdaptive(fileName: "ProxyPinPkcs12.p12"));
                                   if (path == null) return;
                                   var p12Bytes = await CertificateManager.generatePkcs12(
                                       password?.isNotEmpty == true ? password : null);

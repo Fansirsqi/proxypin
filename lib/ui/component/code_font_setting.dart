@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
+import 'package:proxypin/ui/component/theme_presets.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/utils/system_fonts.dart';
 
@@ -44,15 +45,15 @@ class _CodeFontFamilyTileState extends State<CodeFontFamilyTile> {
 
     // 当前值是自定义/不常见字体时也要能显示出来
     final items = <DropdownMenuItem<String?>>[
-      DropdownMenuItem(value: null, child: Text(localizations.codeFontFollowUi)),
-      DropdownMenuItem(value: _systemMono, child: Text(localizations.codeFontSystemMono)),
-      ..._families.map((family) => DropdownMenuItem(value: family, child: Text(family))),
+      DropdownMenuItem(value: null, child: FontFamilyLabel(localizations.codeFontFollowUi)),
+      DropdownMenuItem(value: _systemMono, child: FontFamilyLabel(localizations.codeFontSystemMono)),
+      ..._families.map((family) => DropdownMenuItem(value: family, child: FontFamilyLabel(family))),
       if (current != null &&
           current.isNotEmpty &&
           current != SystemFonts.systemMonospaceFamily &&
           !_families.contains(current))
-        DropdownMenuItem(value: current, child: Text(current)),
-      DropdownMenuItem(value: _custom, child: Text(localizations.codeFontCustom)),
+        DropdownMenuItem(value: current, child: FontFamilyLabel(current)),
+      DropdownMenuItem(value: _custom, child: FontFamilyLabel(localizations.codeFontCustom)),
     ];
 
     var value = current == null || current.isEmpty ? null : current;
@@ -128,6 +129,19 @@ class _CodeFontFamilyTileState extends State<CodeFontFamilyTile> {
   }
 }
 
+class FontFamilyLabel extends StatelessWidget {
+  final String label;
+
+  const FontFamilyLabel(this.label, {super.key});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: Text(label, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis),
+      );
+}
+
 /// 「代码字体」列表项：字号。
 class CodeFontSizeTile extends StatelessWidget {
   final TextStyle? titleStyle;
@@ -173,13 +187,10 @@ class CodeFontSizeTile extends StatelessWidget {
   }
 }
 
-/// 「抓包列表密度」列表项（宽松 / 紧凑 / 极紧凑）。
-class CaptureDensityTile extends StatelessWidget {
+class EditorColorSchemeTile extends StatelessWidget {
   final TextStyle? titleStyle;
-  final TextStyle? subtitleStyle;
-  final bool showSubtitle;
 
-  const CaptureDensityTile({super.key, this.titleStyle, this.subtitleStyle, this.showSubtitle = true});
+  const EditorColorSchemeTile({super.key, this.titleStyle});
 
   @override
   Widget build(BuildContext context) {
@@ -188,26 +199,21 @@ class CaptureDensityTile extends StatelessWidget {
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(localizations.captureListDensity, style: titleStyle),
-      subtitle: showSubtitle
-          ? Text(localizations.captureListDensitySubtitle, style: subtitleStyle ?? const TextStyle(fontSize: 12))
-          : null,
+      title: Text(localizations.editorColorScheme, style: titleStyle),
       trailing: SizedBox(
         width: 200,
-        child: DropdownButton<String>(
-          value: config?.captureListDensity ?? 'comfortable',
+        child: DropdownButton<EditorColorScheme>(
+          value: config?.editorColorScheme ?? EditorColorScheme.followTheme,
           isExpanded: true,
           focusColor: Colors.transparent,
           onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-            config?.applyDisplaySetting(() => config.captureListDensity = value);
+            if (value == null) return;
+            config?.applyDisplaySetting(() => config.editorColorScheme = value);
           },
           items: [
-            DropdownMenuItem(value: 'comfortable', child: Text(localizations.densityComfortable)),
-            DropdownMenuItem(value: 'compact', child: Text(localizations.densityCompact)),
-            DropdownMenuItem(value: 'dense', child: Text(localizations.densityDense)),
+            for (final scheme in EditorColorScheme.values)
+              DropdownMenuItem(
+                  value: scheme, child: Text(scheme.paletteLabel ?? localizations.editorColorSchemeFollowTheme)),
           ],
         ),
       ),

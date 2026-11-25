@@ -1,7 +1,7 @@
 import 'package:code_forge/code_forge.dart';
 import 'package:flutter/material.dart';
-import 'package:re_highlight/styles/monokai-sublime.dart';
 import 'package:proxypin/ui/component/code_style.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:re_highlight/languages/javascript.dart';
 
@@ -55,11 +55,9 @@ async function onRequest(context, request) {
   Widget build(BuildContext context) {
     return SizedBox(
       height: 380,
-      child: CodeForge(
+      child: ThemedCodeEditor(
         controller: script,
         language: langJavascript,
-        editorTheme: monokaiSublimeTheme,
-        enableGuideLines: false,
         autoFocus: true,
         textStyle: codeTextStyle(context, size: 13),
       ),

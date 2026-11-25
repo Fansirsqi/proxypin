@@ -24,7 +24,7 @@ import 'package:http/http.dart' as http;
 import 'package:get/get.dart';
 import 'package:proxypin/ui/component/code_style.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:re_highlight/styles/monokai-sublime.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:re_highlight/languages/javascript.dart';
 import 'package:proxypin/network/components/manager/script_manager.dart';
@@ -756,13 +756,11 @@ class _ScriptEditState extends State<ScriptEdit> {
                                 children: [
                                   SizedBox(
                                       height: 360,
-                                      child: CodeForge(
+                                      child: ThemedCodeEditor(
                                         controller: script,
                                         language: langJavascript,
-                                        editorTheme: monokaiSublimeTheme,
                                         readOnly: _useRemote,
-                                        enableGuideLines: false,
-                                        textStyle: codeTextStyle(context, size: 13, color: Colors.white),
+                                        textStyle: codeTextStyle(context, size: 13),
                                       )),
                                   if (_useRemote && script.text.trim().isEmpty)
                                     Positioned.fill(

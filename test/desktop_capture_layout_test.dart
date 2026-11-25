@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide DropdownMenu;
@@ -16,6 +17,7 @@ import 'package:proxypin/ui/desktop/request/list.dart';
 import 'package:proxypin/ui/desktop/request/request.dart';
 import 'package:proxypin/ui/desktop/request/request_sequence.dart';
 import 'package:proxypin/ui/desktop/request/search.dart';
+import 'package:proxypin/ui/desktop/ssl/ssl.dart';
 import 'package:proxypin/utils/listenable_list.dart';
 
 Future<DesktopRequestListState> pumpCaptureList(
@@ -26,7 +28,6 @@ Future<DesktopRequestListState> pumpCaptureList(
   Locale locale = const Locale('en'),
   double textScale = 1,
 }) async {
-  await tester.runAsync(() => AppLocalizations.delegate.load(locale));
   final key = GlobalKey<DesktopRequestListState>();
   final proxy = ProxyServer(Configuration.fromJson({}));
   final panel = NetworkTabController(proxyServer: proxy);
@@ -67,13 +68,74 @@ HttpRequest sampleRequest(String path, {HttpMethod method = HttpMethod.get, Stri
   return request;
 }
 
+class _PortTestConfiguration extends Configuration {
+  int? savedPort;
+
+  _PortTestConfiguration() : super.fromJson({'port': 8899});
+
+  @override
+  Future<void> flushConfig() async {
+    savedPort = port;
+  }
+}
+
 void main() {
+  setUpAll(() async {
+    await AppLocalizations.delegate.load(const Locale('en'));
+    await AppLocalizations.delegate.load(const Locale('es'));
+    await AppLocalizations.delegate.load(const Locale('zh'));
+  });
+
+  testWidgets('HTTPS menu changes the proxy port only on valid save', (tester) async {
+    final configuration = _PortTestConfiguration();
+    final proxy = ProxyServer(configuration);
+    await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: Scaffold(body: SslWidget(proxyServer: proxy)),
+    ));
+    await tester.pumpAndSettle();
+
+    Future<void> openPortDialog(int port) async {
+      await tester.tap(find.text('HTTPS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Port: $port'));
+      await tester.pumpAndSettle();
+    }
+
+    await openPortDialog(8899);
+    await tester.enterText(find.byType(TextField), '9999');
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(proxy.port, 8899);
+    expect(configuration.savedPort, isNull);
+
+    await openPortDialog(8899);
+    await tester.enterText(find.byType(TextField), '65536');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(proxy.port, 8899);
+    await tester.enterText(find.byType(TextField), '9999');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(proxy.port, 9999);
+    expect(configuration.savedPort, 9999);
+    await openPortDialog(9999);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('both tabs and the action menu stay reachable in a narrow translated capture pane', (tester) async {
     final request = sampleRequest('request');
+    final settings = AppConfiguration.withConfigFile(File('unused'))..clearConfirm = true;
+    addTearDown(settings.globalChange.dispose);
     final state = await pumpCaptureList(
       tester,
       width: 142,
       requests: [request],
+      configuration: settings,
       locale: const Locale('es'),
       textScale: 1.25,
     );
@@ -93,7 +155,12 @@ void main() {
     }
     expect(domainTab.hitTestable(), findsOneWidget);
     expect(sequenceTab.hitTestable(), findsOneWidget);
-    expect(find.byIcon(Icons.more_vert_outlined).hitTestable(), findsOneWidget);
+    final moreButton = find.byIcon(Icons.more_vert_outlined);
+    final clearButton = find.byTooltip(localizations.clear);
+    expect(moreButton.hitTestable(), findsOneWidget);
+    expect(clearButton.hitTestable(), findsOneWidget);
+    expect(tester.getCenter(clearButton).dx, greaterThan(tester.getCenter(tabBar).dx));
+    expect(tester.getCenter(clearButton).dx, lessThan(tester.getCenter(moreButton).dx));
     expect(find.byIcon(Icons.filter_list).hitTestable(), findsOneWidget);
 
     await tester.tap(sequenceTab);
@@ -103,6 +170,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(request.remoteDomain()!).hitTestable(), findsOneWidget);
 
+    await tester.tap(clearButton);
+    await tester.pumpAndSettle();
+    expect(find.text(localizations.clearConfirm), findsOneWidget);
+    await tester.tap(find.text(localizations.cancel));
+    await tester.pumpAndSettle();
+    expect(state.container.length, 1);
+    await tester.tap(clearButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(localizations.confirm));
+    await tester.pumpAndSettle();
+    expect(state.container, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -175,7 +253,7 @@ void main() {
     final configuration = await tester.runAsync(() => AppConfiguration.instance);
     final previousDensity = configuration!.captureListDensity;
     addTearDown(() => configuration.captureListDensity = previousDensity);
-    configuration.captureListDensity = 'comfortable';
+    configuration.captureListDensity = 100;
 
     final portrait =
         base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAgCAIAAABch4VNAAAADElEQVR4nGNgGFgAAACAAAH0EuoZAAAAAElFTkSuQmCC');
@@ -191,15 +269,17 @@ void main() {
     final row = find.byType(RequestWidget);
     final headerHitArea = find.ancestor(of: header, matching: find.byType(InkWell)).first;
     final sizes = <(double, double)>[];
-    for (final density in AppConfiguration.captureDensities) {
+    for (final density in [300.0, 100.0, 86.0, 80.0, 60.0, 25.0]) {
       configuration.captureListDensity = density;
       configuration.globalChange.value = !configuration.globalChange.value;
       await tester.pumpAndSettle();
       sizes.add((tester.getSize(headerHitArea).height, tester.getSize(row).height));
     }
-    expect(sizes.map((size) => size.$1), [40, 32, 24]);
-    expect(sizes[0].$2, greaterThan(sizes[1].$2));
-    expect(sizes[1].$2, greaterThan(sizes[2].$2));
+    expect(sizes.sublist(1, 5).map((size) => size.$1), [40, 34.4, 32, 24]);
+    for (var index = 1; index < sizes.length; index++) {
+      expect(sizes[index - 1].$1, greaterThan(sizes[index].$1));
+      expect(sizes[index - 1].$2, greaterThan(sizes[index].$2));
+    }
     expect(tester.getSize(image).height, lessThanOrEqualTo(configuration.captureRowMetrics.imageSize));
 
     await tester.tap(row, buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);

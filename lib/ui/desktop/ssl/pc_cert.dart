@@ -6,6 +6,7 @@ import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/bin/server.dart';
 import 'package:proxypin/network/util/cert/cert_data.dart';
 import 'package:proxypin/network/util/crts.dart';
+import 'package:proxypin/network/util/logger.dart';
 import 'package:proxypin/storage/local_storage.dart';
 import 'package:proxypin/ui/component/app_dialog.dart';
 import 'package:proxypin/ui/desktop/ssl/cert_installer.dart';
@@ -109,7 +110,7 @@ class _PCCertState extends State<PCCert> with TickerProviderStateMixin {
           child: TabBarView(
             controller: _tabController,
             children: [
-              _AutomaticInstall(),
+              SingleChildScrollView(child: _AutomaticInstall()),
               _buildManualTab(context),
             ],
           ),
@@ -210,18 +211,24 @@ class _AutomaticInstall extends StatefulWidget {
 
 class _AutomaticInstallState extends State<_AutomaticInstall> {
   static final RxnBool isCertInstalled = RxnBool(null);
+  static final _isUpdating = false.obs;
   X509CertificateData? certDetails;
 
   @override
   void initState() {
     super.initState();
     certDetails = CertificateManager.caCert;
-    _checkCertStatus();
+    if (!_isUpdating.value) {
+      isCertInstalled.value = null;
+      _checkCertStatus();
+    }
 
     if (certDetails == null) {
-      CertificateManager.getCertificateDetails().then((value) => setState(() {
-            certDetails = value;
-          }));
+      CertificateManager.getCertificateDetails().then((value) {
+        if (mounted) {
+          setState(() => certDetails = value);
+        }
+      });
     }
   }
 
@@ -241,11 +248,13 @@ class _AutomaticInstallState extends State<_AutomaticInstall> {
 
   List<Widget> buildAutomaticChildren() {
     final localizations = AppLocalizations.of(context)!;
-    final isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
+    final isCN = Localizations.localeOf(context).languageCode == 'zh';
 
-    final subtitleStyle = Theme.of(context).textTheme.bodyMedium;
-    final infoLabelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]);
-    final infoValueStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final subtitleStyle = theme.textTheme.bodyMedium;
+    final infoLabelStyle = theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant);
+    final infoValueStyle = subtitleStyle?.copyWith(color: colors.onSurface, fontWeight: FontWeight.w500);
     List<Widget> children = [
       const SizedBox(height: 8),
       Text(isCN ? "通过安装并信任 ProxyPin CA" : "Install and Trust ProxyPin CA Certificate",
@@ -269,7 +278,7 @@ class _AutomaticInstallState extends State<_AutomaticInstall> {
       children.add(const SizedBox(height: 20));
       children.add(
         FilledButton(
-            onPressed: () => _installCert(context),
+            onPressed: _isUpdating.value ? null : () => _updateCertificate(install: true),
             style: FilledButton.styleFrom(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 padding: const EdgeInsets.symmetric(horizontal: 60, vertical: 19)),
@@ -278,7 +287,7 @@ class _AutomaticInstallState extends State<_AutomaticInstall> {
     } else if (isCertInstalled.value == true) {
       children.add(Card(
         elevation: 2,
-        color: Theme.brightnessOf(context) == Brightness.light ? Colors.grey[50] : Colors.grey[800],
+        color: theme.cardTheme.color ?? colors.surfaceContainer,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
@@ -316,29 +325,78 @@ class _AutomaticInstallState extends State<_AutomaticInstall> {
           ]),
         ),
       ));
+      if (Platform.isLinux) {
+        children.add(const SizedBox(height: 16));
+        children.add(OutlinedButton(
+          onPressed: _isUpdating.value ? null : () => _updateCertificate(install: false),
+          child: Text(isCN ? '卸载证书' : 'Uninstall Certificate'),
+        ));
+      }
     }
 
     return children;
   }
 
-  void _installCert(BuildContext context) async {
-    final isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
-    var caFile = await CertificateManager.certificateFile();
-    bool success = await CertInstaller.installCertificate(caFile);
-    CertificateManager.cleanCache();
+  Future<void> _updateCertificate({required bool install}) async {
+    if (_isUpdating.value) return;
 
-    if (!context.mounted) {
-      return;
-    }
+    final isCN = Localizations.localeOf(context).languageCode == 'zh';
+    _isUpdating.value = true;
+    try {
+      if (!install && !await _confirmUninstall(isCN)) return;
+      if (!mounted) return;
 
-    if (success) {
-      isCertInstalled.value = true;
-      CustomToast.success(isCN ? "证书安装成功" : "Certificate installed successfully").show(context);
-    } else {
-      isCertInstalled.value = false;
-      final isCN = Localizations.localeOf(context) == const Locale.fromSubtags(languageCode: 'zh');
-      CustomToast.error(isCN ? "证书安装失败，请尝试手动安装" : "Certificate installation failed, please try manual installation")
-          .show(context);
+      final caFile = await CertificateManager.certificateFile();
+      final details = await CertificateManager.getCertificateDetails();
+      final uninstallResult = install ? null : await CertInstaller.uninstallLinuxCertificate(caFile);
+      final success = install
+          ? await CertInstaller.installCertificate(caFile)
+          : uninstallResult == CertificateUninstallResult.removed;
+      isCertInstalled.value = await CertInstaller.isCertInstalled(caFile, details);
+      CertificateManager.cleanCache();
+
+      if (!mounted || uninstallResult == CertificateUninstallResult.cancelled) return;
+      if (success) {
+        final message = install
+            ? (isCN ? '证书安装成功' : 'Certificate installed successfully')
+            : (isCN ? '证书已卸载' : 'Certificate uninstalled successfully');
+        CustomToast.success(message).show(context);
+      } else {
+        _showUpdateFailure(isCN, install);
+      }
+    } catch (error) {
+      logger.e('Could not update the root certificate: $error');
+      if (mounted) _showUpdateFailure(isCN, install);
+    } finally {
+      _isUpdating.value = false;
     }
+  }
+
+  Future<bool> _confirmUninstall(bool isCN) async {
+    final localizations = AppLocalizations.of(context)!;
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(isCN ? '卸载 ProxyPin CA' : 'Uninstall ProxyPin CA'),
+            content: Text(isCN
+                ? '这会从系统信任库移除当前证书。使用同一张证书的其他 ProxyPin 版本也会失去系统信任。'
+                : 'This removes the current certificate from system trust. Other ProxyPin versions using the same certificate will also lose system trust.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(localizations.cancel)),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(isCN ? '卸载' : 'Uninstall'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _showUpdateFailure(bool isCN, bool install) {
+    final message = install
+        ? (isCN ? '证书安装失败，请尝试手动安装' : 'Certificate installation failed. Please try manual installation.')
+        : (isCN ? '证书卸载未完成，请检查系统证书库' : 'Certificate uninstall did not complete. Check the system trust store.');
+    CustomToast.error(message).show(context);
   }
 }

@@ -62,6 +62,13 @@ class _PreferenceState extends State<Preference> {
 
   @override
   Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(visualDensity: VisualDensity.standard),
+      child: Builder(builder: _buildPreferences),
+    );
+  }
+
+  Widget _buildPreferences(BuildContext context) {
     AppLocalizations localizations = AppLocalizations.of(context)!;
     var titleStyle = Theme.of(context).textTheme.titleSmall;
     final theme = Theme.of(context);
@@ -124,6 +131,7 @@ class _PreferenceState extends State<Preference> {
       CaptureDensityTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
       CodeFontFamilyTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
       CodeFontSizeTile(titleStyle: titleStyle, subtitleStyle: subtitleStyle),
+      EditorColorSchemeTile(titleStyle: titleStyle),
       const Divider(height: 24),
       ListTile(
           contentPadding: EdgeInsets.zero,

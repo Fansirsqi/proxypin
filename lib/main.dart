@@ -24,14 +24,13 @@ import 'package:flutter/material.dart';
 import 'package:proxypin/network/bin/configuration.dart';
 import 'package:proxypin/network/components/manager/environment_manager.dart';
 import 'package:proxypin/ui/component/chinese_font.dart';
+import 'package:proxypin/ui/component/independent_window_frame.dart';
 import 'package:proxypin/ui/component/multi_window.dart';
 import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:proxypin/ui/component/theme_presets.dart';
-import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/window_resize_border.dart';
 import 'package:proxypin/ui/configuration.dart';
 import 'package:proxypin/ui/desktop/desktop.dart';
-import 'package:proxypin/ui/desktop/widgets/windows_toolbar.dart';
 import 'package:proxypin/ui/mobile/mobile.dart';
 import 'package:proxypin/utils/desktop_support.dart';
 import 'package:proxypin/utils/navigator.dart';
@@ -62,7 +61,7 @@ void main(List<String> args) async {
   if (args.firstOrNull == 'multi_window' || standaloneWindow) {
     final controller = windowController!;
     final windowArguments =
-        standaloneWindow ? await DesktopMultiWindow.readStandaloneWindowArguments() : controller.arguments;
+        standaloneWindow ? await DesktopMultiWindow.readStandaloneWindowArguments(stdin) : controller.arguments;
     final argument =
         windowArguments.isEmpty ? <String, dynamic>{} : jsonDecode(windowArguments) as Map<String, dynamic>;
     DesktopMultiWindow.initializeFromArguments(argument);
@@ -73,21 +72,18 @@ void main(List<String> args) async {
       appConfiguration.applyThemeSettings(settings);
     }
     if (standaloneWindow) {
-      await windowManager.setPreventClose(true);
-      windowManager.addListener(_StandaloneCloseListener());
+      await DesktopMultiWindow.prepareStandaloneClose(appConfiguration.flushConfig);
       unawaited(DesktopMultiWindow.listenForStandaloneEvents());
     }
 
     if (Platform.isMacOS) {
       windowManager.setTitleBarStyle(TitleBarStyle.hidden);
     }
-    if (appConfiguration.themeMode != ThemeMode.system) {
-      windowManager.setBrightness(appConfiguration.themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light);
-    }
     DesktopMultiWindow.prepareWindow();
     runApp(FluentApp(
       multiWindow(controller.windowId, argument),
       appConfiguration,
+      independentWindow: true,
       resizeBorder: standaloneWindow,
       toolTitle: standaloneWindow ? DesktopMultiWindow.windowTitle : null,
     ));
@@ -123,18 +119,15 @@ void main(List<String> args) async {
   runApp(FluentApp(DesktopHomePage(await configuration, appConfiguration), appConfiguration));
 }
 
-class _StandaloneCloseListener with WindowListener {
-  @override
-  void onWindowClose() => unawaited(DesktopMultiWindow.closeStandaloneWindow());
-}
-
 class FluentApp extends StatelessWidget {
   final Widget home;
   final AppConfiguration appConfiguration;
+  final bool independentWindow;
   final bool resizeBorder;
   final String? toolTitle;
 
-  const FluentApp(this.home, this.appConfiguration, {super.key, this.resizeBorder = true, this.toolTitle});
+  const FluentApp(this.home, this.appConfiguration,
+      {super.key, this.independentWindow = false, this.resizeBorder = true, this.toolTitle});
 
   @override
   Widget build(BuildContext context) {
@@ -153,8 +146,8 @@ class FluentApp extends StatelessWidget {
             supportedLocales: AppLocalizations.supportedLocales,
             builder: (_, child) {
               Widget content = child!;
-              if (toolTitle case final title?) {
-                content = _StandaloneToolWindow(title: title, child: content);
+              if (independentWindow) {
+                content = IndependentWindowFrame(toolTitle: toolTitle, child: content);
               }
               return AppDisplaySettings(
                 configuration: appConfiguration,
@@ -248,34 +241,5 @@ class FluentApp extends StatelessWidget {
             backgroundColor: useAmoled || hasPreset ? colorScheme.surface : null,
             surfaceTintColor: useAmoled ? Colors.black : null,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
-  }
-}
-
-class _StandaloneToolWindow extends StatelessWidget {
-  final String title;
-  final Widget child;
-
-  const _StandaloneToolWindow({required this.title, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(children: [
-      Material(
-        color: desktopChromeColor(theme),
-        child: SizedBox(
-          height: 38,
-          child: WindowsToolbar(
-            iconSize: 24,
-            title: Padding(
-              padding: const EdgeInsets.only(left: 5),
-              child: Text(title, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ),
-        ),
-      ),
-      Divider(height: 1, color: chromeBorderColor(theme)),
-      Expanded(child: child),
-    ]);
   }
 }

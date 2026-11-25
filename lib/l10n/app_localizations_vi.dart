@@ -1618,10 +1618,18 @@ class AppLocalizationsVi extends AppLocalizations {
   String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
-  String get captureListDensity => 'Mật độ danh sách';
+  String get captureListDensity => 'Chiều cao hàng trong danh sách thu thập';
 
   @override
-  String get captureListDensitySubtitle => 'Row height of captured requests';
+  String get captureListDensitySubtitle => 'Điều chỉnh chiều cao các hàng trong danh sách thu thập';
+
+  @override
+  String get alwaysShowCaptureRowDetails => 'Luôn hiển thị dòng thứ hai';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return 'Hiển thị trạng thái, giờ và thời lượng ngay cả dưới $threshold%';
+  }
 
   @override
   String get densityComfortable => 'Thoáng';
@@ -1657,6 +1665,12 @@ class AppLocalizationsVi extends AppLocalizations {
   String get codeFontSizeSubtitle => 'Font size of code editors';
 
   @override
+  String get editorColorScheme => 'Bảng màu trình soạn thảo';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'Theo giao diện ứng dụng';
+
+  @override
   String get appFont => 'Interface font';
 
   @override
@@ -1672,10 +1686,10 @@ class AppLocalizationsVi extends AppLocalizations {
   String get appFontScaleSubtitle => 'Scale the whole UI text up or down';
 
   @override
-  String get uiDensity => 'Interface density';
+  String get uiDensity => 'Khoảng cách giao diện';
 
   @override
-  String get uiDensitySubtitle => 'Spacing of buttons, lists and menus';
+  String get uiDensitySubtitle => 'Điều chỉnh khoảng cách trong các nút, danh sách và menu';
 
   @override
   String get noOutputHint => 'Click Run to see output here';

@@ -54,11 +54,34 @@ import '../component/search/search_controller.dart';
 import '../component/search/virtualized_highlight_text.dart';
 import '../toolbox/encoder.dart';
 import 'detail_fields.dart';
+import 'read_only_body.dart';
 import 'video_preview.dart';
 
 /// body 选区菜单：整个文本即全部内容，复制全部用“全选”即可，故不提供“复制值”
 Widget bodyContextMenu(BuildContext context, EditableTextState editableTextState) =>
     contextMenu(context, editableTextState, copyValue: false);
+
+bool _showsStream(HttpMessage? message, CryptoDecodedResult? decoded) =>
+    decoded == null &&
+    (message?.isWebSocket == true || (message?.contentType == ContentType.sse && message?.messages.isNotEmpty == true));
+
+ContentType _previewContentType(HttpMessage message) {
+  final type = message.contentType;
+  if (type != ContentType.text && type != ContentType.http) return type;
+  final path = Uri.tryParse(message.requestUrl ?? '')?.path.toLowerCase() ?? '';
+  final name = path.split('/').last;
+  final extension = name.lastIndexOf('.');
+  if (extension == -1) return type;
+  return switch (name.substring(extension)) {
+    '.html' || '.htm' || '.xhtml' => ContentType.html,
+    '.yaml' || '.yml' => ContentType.yaml,
+    '.json' => ContentType.json,
+    '.xml' => ContentType.xml,
+    '.css' => ContentType.css,
+    '.js' || '.mjs' => ContentType.js,
+    _ => type,
+  };
+}
 
 ///请求响应的body部分
 ///@Author wanghongen
@@ -139,12 +162,12 @@ class HttpBodyState extends State<HttpBodyWidget> {
     _bodyText = null;
     _looksLikeJson = false;
     if (message == null || bytes == null || bytes.isEmpty || message.isWebSocket) return true;
-    final contentType = message.contentType;
+    final contentType = _previewContentType(message);
     if (contentType == ContentType.image || contentType == ContentType.video) return true;
 
     final bodyText = message.decodeBodyString(offload: bytes.length >= 16384 || (encoding?.isNotEmpty ?? false));
     _bodyText = bodyText;
-    if (contentType != ContentType.json && !contentType.isBinary) {
+    if (contentType == ContentType.text || contentType == ContentType.http) {
       bodyText.then((text) {
         if (!mounted || _bodyText != bodyText || text.length < 2) return;
         final last = text.length - 1;
@@ -212,7 +235,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
       return const SizedBox();
     }
 
-    final contentType = widget.httpMessage!.contentType;
+    final contentType = _previewContentType(widget.httpMessage!);
     final tabs = Tabs.of(contentType, _looksLikeJson);
 
     List<Widget> bodyContent(double? previewHeight) => [
@@ -272,6 +295,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
 
   void hideSearchOverlay() {
     searchController.removeSearchOverlay();
+    bodyKey.currentState?.closeTextSearch();
   }
 
   void _toggleSearch() {
@@ -281,6 +305,7 @@ class HttpBodyState extends State<HttpBodyWidget> {
       hideSearchOverlay();
       return;
     }
+    if (bodyKey.currentState?.toggleTextSearch() == true) return;
     final box = searchIconKey.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return;
     final position = box.localToGlobal(Offset.zero);
@@ -630,9 +655,10 @@ class HttpBodyState extends State<HttpBodyWidget> {
   void openNew() async {
     if (Platforms.isDesktop()) {
       var size = MediaQuery.of(context).size;
-      await DesktopMultiWindow.createWindow(
-        jsonEncode({'name': 'HttpBodyWidget', 'httpMessage': widget.httpMessage, 'inNewWindow': true}),
-        title: widget.httpMessage is HttpRequest ? localizations.requestBody : localizations.responseBody,
+      await MultiWindow.openToolWindow(
+        widget.httpMessage is HttpRequest ? localizations.requestBody : localizations.responseBody,
+        'HttpBodyWidget',
+        args: {'httpMessage': widget.httpMessage?.toJson(), 'inNewWindow': true},
         size: Size(800, size.height),
       );
       return;
@@ -703,6 +729,7 @@ String _formatTextBodyIsolate(Map<String, String> args) {
 
 class _BodyState extends State<_Body> {
   static const int _backgroundThreshold = 10000;
+  final _textReaderKey = GlobalKey<ReadOnlyBodyState>();
   (ViewType, String)? _formatInput;
   Future<String>? _formattedBody;
   String? _jsonInput;
@@ -710,6 +737,11 @@ class _BodyState extends State<_Body> {
   double _zoom = 1;
 
   ViewType get viewType => widget.viewType;
+
+  bool toggleTextSearch() => _textReaderKey.currentState?.toggleSearch() ?? false;
+
+  void closeTextSearch() => _textReaderKey.currentState?.closeSearch();
+
   TextStyle get _textStyle => codeTextStyle(
         context,
         base: (Theme.of(context).textTheme.bodyMedium ?? DefaultTextStyle.of(context).style).copyWith(height: 1.4),
@@ -761,7 +793,7 @@ class _BodyState extends State<_Body> {
   }
 
   Future<String> _formatTextBody(ViewType type, String text) {
-    if (type == ViewType.text) return SynchronousFuture(text);
+    if (type == ViewType.text || type == ViewType.yaml) return SynchronousFuture(text);
     final input = (type, text);
     if (_formatInput != input) {
       _formatInput = input;
@@ -788,9 +820,7 @@ class _BodyState extends State<_Body> {
   Widget _getBody(ViewType type) {
     final message = widget.message;
 
-    if (widget.decoded == null &&
-        (message?.isWebSocket == true ||
-            (message?.contentType == ContentType.sse && message?.messages.isNotEmpty == true))) {
+    if (_showsStream(message, widget.decoded)) {
       List<Widget>? list = message?.messages
           .map((e) => Container(
               margin: const EdgeInsets.only(top: 2, bottom: 2),
@@ -879,7 +909,7 @@ class _BodyState extends State<_Body> {
         key: ObjectKey(_jsonTree),
         child: futureWidget(_jsonTree!, (result) {
           final (valid, value) = result;
-          if (!valid) return _textViewer(text);
+          if (!valid) return _textViewer(text, language: 'json');
           return JsonViewer(value,
               colorTheme: ColorTheme.of(context), searchController: widget.searchController, textStyle: _textStyle);
         }),
@@ -904,6 +934,8 @@ class _BodyState extends State<_Body> {
         return 'xml';
       case ViewType.css:
         return 'css';
+      case ViewType.yaml:
+        return 'yaml';
       case ViewType.js:
         return 'javascript';
       case ViewType.json:
@@ -925,24 +957,25 @@ class _BodyState extends State<_Body> {
   }
 
   Widget _textViewer(String text, {String? language}) {
-    if (_needsVirtualization(text)) {
-      return VirtualizedHighlightText(
-        text: text,
-        language: language,
-        style: _textStyle,
-        height: _previewHeight(context),
-        searchController: widget.searchController,
-        scrollController: widget.scrollController,
-        chunkLines: 24,
-        prepareInBackground: text.length >= 16384,
-      );
-    }
-    return HighlightTextWidget(
+    final height = _previewHeight(context);
+    final style = _textStyle;
+    final virtualized = _needsVirtualization(text);
+    return ReadOnlyBody(
+      key: _textReaderKey,
       text: text,
       language: language,
-      style: _textStyle,
+      style: style,
+      height: height,
+      virtualized: virtualized,
       searchController: widget.searchController,
-      contextMenuBuilder: bodyContextMenu,
+      scrollController: widget.scrollController,
+      fallback: (style) => HighlightTextWidget(
+        text: text,
+        language: language,
+        style: style,
+        searchController: widget.searchController,
+        contextMenuBuilder: bodyContextMenu,
+      ),
     );
   }
 }
@@ -966,13 +999,6 @@ class Tabs {
       tabs.list.add(ViewType.jsonText);
     }
 
-    if (contentType == ContentType.html ||
-        contentType == ContentType.xml ||
-        contentType == ContentType.js ||
-        contentType == ContentType.css) {
-      tabs.list.add(ViewType.text);
-    }
-
     tabs.list.add(ViewType.of(contentType) ?? ViewType.text);
 
     //为json时，增加json格式化
@@ -981,7 +1007,13 @@ class Tabs {
       tabs.list.add(ViewType.json);
     }
 
-    if (contentType == ContentType.formUrl || contentType == ContentType.json) {
+    if (contentType == ContentType.formUrl ||
+        contentType == ContentType.json ||
+        contentType == ContentType.html ||
+        contentType == ContentType.xml ||
+        contentType == ContentType.js ||
+        contentType == ContentType.css ||
+        contentType == ContentType.yaml) {
       tabs.list.add(ViewType.text);
     }
 
@@ -1004,6 +1036,7 @@ enum ViewType {
   image("Image"),
   video("Video"),
   css("CSS"),
+  yaml("YAML"),
   js("JavaScript"),
   hex("Hex"),
   ;

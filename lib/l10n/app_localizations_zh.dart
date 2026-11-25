@@ -1607,10 +1607,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get detailMediaUnavailable => '无法预览此媒体';
 
   @override
-  String get captureListDensity => '抓包列表密度';
+  String get captureListDensity => '抓包列表行高';
 
   @override
-  String get captureListDensitySubtitle => '抓包列表每行的高度';
+  String get captureListDensitySubtitle => '调整抓包列表中每一行的高度';
+
+  @override
+  String get alwaysShowCaptureRowDetails => '始终显示第二行';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return '行高低于 $threshold% 时也显示状态、时间和耗时等信息';
+  }
 
   @override
   String get densityComfortable => '宽松';
@@ -1646,6 +1654,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codeFontSizeSubtitle => '代码编辑器字号';
 
   @override
+  String get editorColorScheme => '编辑器配色';
+
+  @override
+  String get editorColorSchemeFollowTheme => '跟随应用主题';
+
+  @override
   String get appFont => '界面字体';
 
   @override
@@ -1661,10 +1675,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appFontScaleSubtitle => '整体界面文字放大/缩小';
 
   @override
-  String get uiDensity => '界面密度';
+  String get uiDensity => '界面间距';
 
   @override
-  String get uiDensitySubtitle => '按钮、列表与菜单的间距';
+  String get uiDensitySubtitle => '调整按钮、列表和菜单等控件的间距';
 
   @override
   String get noOutputHint => '点「Run」运行后，输出会显示在这里';
@@ -3085,10 +3099,18 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get detailMediaUnavailable => '無法預覽此媒體';
 
   @override
-  String get captureListDensity => '抓包列表密度';
+  String get captureListDensity => '封包列表列高';
 
   @override
-  String get captureListDensitySubtitle => '抓包列表每列的高度';
+  String get captureListDensitySubtitle => '調整封包列表中每一列的高度';
+
+  @override
+  String get alwaysShowCaptureRowDetails => '一律顯示第二行';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return '列高低於 $threshold% 時仍顯示狀態、時間和耗時等資訊';
+  }
 
   @override
   String get densityComfortable => '寬鬆';
@@ -3124,6 +3146,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get codeFontSizeSubtitle => '程式碼編輯器字級';
 
   @override
+  String get editorColorScheme => '編輯器配色';
+
+  @override
+  String get editorColorSchemeFollowTheme => '跟隨應用程式主題';
+
+  @override
   String get appFont => '介面字型';
 
   @override
@@ -3139,8 +3167,8 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get appFontScaleSubtitle => '放大或縮小介面文字';
 
   @override
-  String get uiDensity => '介面密度';
+  String get uiDensity => '介面間距';
 
   @override
-  String get uiDensitySubtitle => '按鈕、列表與選單的間距';
+  String get uiDensitySubtitle => '調整按鈕、列表及選單等元件的間距';
 }

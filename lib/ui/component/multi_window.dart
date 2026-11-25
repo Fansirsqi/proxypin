@@ -73,10 +73,16 @@ Widget multiWindow(String windowId, Map<dynamic, dynamic> argument) {
 
   //请求详情
   if (argument['name'] == 'RequestDetailPage') {
+    final requestJson = argument['request'] as Map<String, dynamic>?;
+    final responseJson = argument['response'] as Map<String, dynamic>?;
+    final request = requestJson == null ? null : HttpRequest.fromJson(requestJson);
+    final response = responseJson == null ? null : HttpResponse.fromJson(responseJson);
+    request?.response = response;
+    response?.request = request;
     return NetworkTabController(
       windowId: windowId,
-      httpRequest: argument['request'] == null ? null : HttpRequest.fromJson(argument['request']),
-      httpResponse: argument['response'] == null ? null : HttpResponse.fromJson(argument['response']),
+      httpRequest: request,
+      httpResponse: response,
     );
   }
 
@@ -257,7 +263,7 @@ class MultiWindow {
 
     try {
       registerMethodHandler();
-      return DesktopMultiWindow.createWindow(
+      return await DesktopMultiWindow.createWindow(
         jsonEncode({'name': widgetName, ...?args}),
         title: Platform.isMacOS ? null : title,
         size: size,
@@ -273,7 +279,15 @@ class MultiWindow {
     final singleton = _singletonWidgets.contains(widgetName);
     if (standalone && singleton && !_openingWidgets.add(widgetName)) return;
     try {
-      if (standalone) {
+      if (standalone && DesktopMultiWindow.isStandalone) {
+        await DesktopMultiWindow.invokeMainWindowMethod('openToolWindow', {
+          'title': title,
+          'name': widgetName,
+          'width': size.width,
+          'height': size.height,
+          'args': args,
+        });
+      } else if (standalone) {
         registerMethodHandler();
         await DesktopMultiWindow.launchStandaloneWindow(title, size, {'name': widgetName, ...?args},
             singleton: singleton);
@@ -392,6 +406,17 @@ void registerMethodHandler() {
   _registerHandler = true;
   DesktopMultiWindow.onStandaloneClosed = ScriptManager.removeLogHandler;
   DesktopMultiWindow.setMethodHandler((call, fromWindowId) async {
+    if (call.method == 'openToolWindow') {
+      final args = call.arguments as Map;
+      await MultiWindow.openToolWindow(
+        args['title'] as String,
+        args['name'] as String,
+        size: Size((args['width'] as num).toDouble(), (args['height'] as num).toDouble()),
+        args: (args['args'] as Map?)?.cast<String, dynamic>(),
+      );
+      return null;
+    }
+
     if (call.method == 'getProxyInfo') {
       return _currentProxyInfo();
     }

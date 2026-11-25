@@ -120,7 +120,7 @@ class Configuration {
     HostFilter.blacklist.toJson();
     var json = jsonEncode(toJson());
     logger.d('Refresh configuration file $runtimeType ${toJson()}');
-    file.writeAsString(json);
+    await file.writeAsString(json);
   }
 
   /// 加载配置文件

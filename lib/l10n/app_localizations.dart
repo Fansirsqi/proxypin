@@ -3235,14 +3235,26 @@ abstract class AppLocalizations {
   /// No description provided for @captureListDensity.
   ///
   /// In en, this message translates to:
-  /// **'Capture list density'**
+  /// **'Capture row height'**
   String get captureListDensity;
 
   /// No description provided for @captureListDensitySubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Row height of captured requests'**
+  /// **'Adjust row height in the capture list'**
   String get captureListDensitySubtitle;
+
+  /// No description provided for @alwaysShowCaptureRowDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Always show the second line'**
+  String get alwaysShowCaptureRowDetails;
+
+  /// No description provided for @alwaysShowCaptureRowDetailsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show status, time and duration even below {threshold}%'**
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold);
 
   /// No description provided for @densityComfortable.
   ///
@@ -3310,6 +3322,18 @@ abstract class AppLocalizations {
   /// **'Font size of code editors'**
   String get codeFontSizeSubtitle;
 
+  /// No description provided for @editorColorScheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Editor color scheme'**
+  String get editorColorScheme;
+
+  /// No description provided for @editorColorSchemeFollowTheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow app theme'**
+  String get editorColorSchemeFollowTheme;
+
   /// No description provided for @appFont.
   ///
   /// In en, this message translates to:
@@ -3343,13 +3367,13 @@ abstract class AppLocalizations {
   /// No description provided for @uiDensity.
   ///
   /// In en, this message translates to:
-  /// **'Interface density'**
+  /// **'Interface spacing'**
   String get uiDensity;
 
   /// No description provided for @uiDensitySubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Spacing of buttons, lists and menus'**
+  /// **'Adjust spacing in buttons, lists and menus'**
   String get uiDensitySubtitle;
 
   /// No description provided for @noOutputHint.

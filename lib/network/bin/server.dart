@@ -68,6 +68,34 @@ class ProxyServer {
 
   int get port => configuration.port;
 
+  bool _changingPort = false;
+
+  Future<void> changePort(int newPort) async {
+    RangeError.checkValueInInterval(newPort, 0, 65535, 'port');
+    if (_changingPort) throw StateError('A proxy port change is already in progress');
+    final oldPort = port;
+    if (newPort == oldPort) return;
+
+    _changingPort = true;
+    final wasRunning = isRunning;
+    try {
+      if (wasRunning) await stop();
+      configuration.port = newPort;
+      if (wasRunning) await start();
+      await configuration.flushConfig();
+    } catch (_) {
+      try {
+        if (port != oldPort && isRunning) await stop();
+      } finally {
+        configuration.port = oldPort;
+        if (wasRunning && !isRunning) await start();
+      }
+      rethrow;
+    } finally {
+      _changingPort = false;
+    }
+  }
+
   set enableSsl(bool enableSsl) {
     configuration.enableSsl = enableSsl;
     if (server == null || server?.isRunning == false) {

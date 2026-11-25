@@ -52,6 +52,13 @@ class _PreferenceState extends State<Preference> {
 
   @override
   Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(visualDensity: VisualDensity.standard),
+      child: Builder(builder: _buildPreferences),
+    );
+  }
+
+  Widget _buildPreferences(BuildContext context) {
     AppLocalizations localizations = AppLocalizations.of(context)!;
     final borderColor = Theme.of(context).dividerColor.withValues(alpha: 0.13);
     final dividerColor = Theme.of(context).dividerColor.withValues(alpha: 0.22);
@@ -59,9 +66,7 @@ class _PreferenceState extends State<Preference> {
     Widget section(List<Widget> tiles) => Card(
           color: Colors.transparent,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-              side: BorderSide(color: borderColor),
-              borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(side: BorderSide(color: borderColor), borderRadius: BorderRadius.circular(10)),
           child: Column(children: tiles),
         );
 
@@ -80,9 +85,7 @@ class _PreferenceState extends State<Preference> {
               MobileThemeSetting(appConfiguration: appConfiguration),
               Divider(height: 0, thickness: 0.3, color: dividerColor),
               ListTile(title: Text(localizations.themeColor)),
-              Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-                  child: themeColor(context)),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8), child: themeColor(context)),
             ]),
             const SizedBox(height: 12),
             section([
@@ -154,6 +157,7 @@ class _PreferenceState extends State<Preference> {
             section([
               CodeFontFamilyTile(),
               CodeFontSizeTile(),
+              EditorColorSchemeTile(),
             ]),
             const SizedBox(height: 12),
             section([

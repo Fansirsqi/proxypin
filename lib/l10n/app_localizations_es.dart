@@ -1619,10 +1619,18 @@ class AppLocalizationsEs extends AppLocalizations {
   String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
-  String get captureListDensity => 'Densidad de la lista';
+  String get captureListDensity => 'Altura de fila de captura';
 
   @override
-  String get captureListDensitySubtitle => 'Altura de cada fila capturada';
+  String get captureListDensitySubtitle => 'Ajusta la altura de las filas en la lista de capturas';
+
+  @override
+  String get alwaysShowCaptureRowDetails => 'Mostrar siempre la segunda línea';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return 'Muestra el estado, la hora y la duración incluso por debajo del $threshold %';
+  }
 
   @override
   String get densityComfortable => 'Cómoda';
@@ -1658,6 +1666,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get codeFontSizeSubtitle => 'Tamaño de fuente de los editores de código';
 
   @override
+  String get editorColorScheme => 'Esquema de colores del editor';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'Seguir el tema de la aplicación';
+
+  @override
   String get appFont => 'Fuente de la interfaz';
 
   @override
@@ -1673,10 +1687,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get appFontScaleSubtitle => 'Escala el texto de toda la interfaz';
 
   @override
-  String get uiDensity => 'Densidad de la interfaz';
+  String get uiDensity => 'Espaciado de la interfaz';
 
   @override
-  String get uiDensitySubtitle => 'Espaciado de botones, listas y menús';
+  String get uiDensitySubtitle => 'Ajusta el espaciado en botones, listas y menús';
 
   @override
   String get noOutputHint => 'Click Run to see output here';

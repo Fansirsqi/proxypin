@@ -23,7 +23,7 @@ import 'package:proxypin/ui/component/multi_window_compat.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:proxypin/ui/component/theme_presets.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:proxypin/network/http/content_type.dart';
@@ -209,24 +209,16 @@ class _XmlViewerPageState extends State<XmlViewerPage> {
   }
 
   Widget _textView() {
-    final editorTheme = codeEditorTheme(context);
-
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Container(
         decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
-        child: CodeForge(
-          // CodeForge 的 lineWrap 是 late final，切换换行靠新 key 重建；
-          // controller 在 State 里复用，文本不会丢。
-          key: ValueKey((_wrap, editorTheme['root'])),
+        child: ThemedCodeEditor(
           controller: _controller,
           lineWrap: _wrap,
           language: HighlightLanguages.getLanguage(ContentType.xml),
-          enableGuideLines: false,
-          editorTheme: editorTheme,
           textStyle: codeTextStyle(context, size: 13),
           finderBuilder: (c, controller) => FindPanelView(controller: controller),
-          selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
         ),
       ),
     );

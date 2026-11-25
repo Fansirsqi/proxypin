@@ -32,9 +32,8 @@ enum ContentType {
   image,
   video,
   http,
-  sse
-
-  ;
+  sse,
+  yaml;
 
   static ContentType valueOf(String name) {
     return ContentType.values.firstWhere((element) => element.name == name.toLowerCase(), orElse: () => http);

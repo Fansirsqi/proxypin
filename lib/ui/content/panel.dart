@@ -215,7 +215,11 @@ class NetworkTabState extends State<NetworkTabController> with TickerProviderSta
   bool onKeyEvent(KeyEvent event) {
     if ((HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed) &&
         event.logicalKey == LogicalKeyboardKey.keyW) {
-      HardwareKeyboard.instance.removeHandler(onKeyEvent);
+      if (DesktopMultiWindow.isStandalone) {
+        if (event is! KeyDownEvent) return true;
+      } else {
+        HardwareKeyboard.instance.removeHandler(onKeyEvent);
+      }
       WindowController.fromWindowId(widget.windowId!).close();
       return true;
     }

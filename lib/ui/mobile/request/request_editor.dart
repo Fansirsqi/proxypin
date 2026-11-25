@@ -19,9 +19,8 @@ import 'dart:convert';
 import 'package:code_forge/code_forge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
 import 'package:proxypin/ui/component/code_style.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/network/bin/server.dart';
@@ -605,15 +604,6 @@ class _HttpState extends State<_HttpWidget> with SingleTickerProviderStateMixin,
     final isNone = _bodyLanguage == _BodyLanguage.none;
     final ct = _bodyLanguageToContentType[_bodyLanguage];
     final language = ct == null ? null : HighlightLanguages.getLanguage(ct);
-    final isDark = Theme.brightnessOf(context) == Brightness.dark;
-    final baseTheme = isDark ? atomOneDarkTheme : atomOneLightTheme;
-    final pageBg = Theme.of(context).colorScheme.surface;
-    final editorTheme = isDark
-        ? {
-            ...baseTheme,
-            'root': const TextStyle(color: Color(0xffabb2bf)).copyWith(backgroundColor: pageBg),
-          }
-        : baseTheme;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _bodyToolbar(),
@@ -628,17 +618,10 @@ class _HttpState extends State<_HttpWidget> with SingleTickerProviderStateMixin,
               )
             : Container(
                 decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
-                child: CodeForge(
-                  // CodeForge 把 language 当作 late final 在 initState 里固定，
-                  // 切换数据类型/换行后必须靠新的 key 重建组件才能生效；
-                  // controller 由本 State 持有，重建不会丢文本。
-                  key: ValueKey('body-editor-${_bodyLanguage.name}-$_bodyWrap'),
+                child: ThemedCodeEditor(
                   controller: body!,
                   lineWrap: _bodyWrap,
                   language: language,
-                  enableGuideLines: false,
-                  selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
-                  editorTheme: editorTheme,
                   textStyle: codeTextStyle(context, size: 13),
                   finderBuilder: (c, controller) => FindPanelView(controller: controller),
                 ),

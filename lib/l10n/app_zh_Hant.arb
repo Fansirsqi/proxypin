@@ -475,8 +475,10 @@
   "detailShowHeaderTable": "顯示標頭表格",
   "detailShowRawHeaders": "顯示標頭原文",
   "detailMediaUnavailable": "無法預覽此媒體",
-  "captureListDensity": "抓包列表密度",
-  "captureListDensitySubtitle": "抓包列表每列的高度",
+  "captureListDensity": "封包列表列高",
+  "captureListDensitySubtitle": "調整封包列表中每一列的高度",
+  "alwaysShowCaptureRowDetails": "一律顯示第二行",
+  "alwaysShowCaptureRowDetailsSubtitle": "列高低於 {threshold}% 時仍顯示狀態、時間和耗時等資訊",
   "densityComfortable": "寬鬆",
   "densityCompact": "緊湊",
   "densityDense": "極緊湊",
@@ -488,11 +490,13 @@
   "codeFontFamily": "字型名稱",
   "codeFontSize": "程式碼字級",
   "codeFontSizeSubtitle": "程式碼編輯器字級",
+  "editorColorScheme": "編輯器配色",
+  "editorColorSchemeFollowTheme": "跟隨應用程式主題",
   "appFont": "介面字型",
   "appFontSubtitle": "介面使用的字型",
   "appFontSystem": "系統預設",
   "appFontScale": "介面字級",
   "appFontScaleSubtitle": "放大或縮小介面文字",
-  "uiDensity": "介面密度",
-  "uiDensitySubtitle": "按鈕、列表與選單的間距"
+  "uiDensity": "介面間距",
+  "uiDensitySubtitle": "調整按鈕、列表及選單等元件的間距"
 }

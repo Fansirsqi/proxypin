@@ -139,26 +139,19 @@ class RequestRowState extends State<RequestRow> {
     var operationName = request.graphqlOperationName;
     var title = request.protocolVersion == 'MQTT' ? 'MQTT $url' : Strings.autoLineString('${request.method.name} $url');
 
-    var time = formatDate(request.requestTime, [HH, ':', nn, ':', ss]);
-    var contentType = response?.contentType.name.toUpperCase() ?? '';
-    var packagesSize = getPackagesSize(request, response);
-
-    var subTitle = request.protocolVersion == 'MQTT'
-        ? '$time - ${request.messages.length} packets'
-        : '$time - [${response?.status.code ?? ''}] $contentType $packagesSize ${response?.costTime() ?? ''}';
-
     var highlightColor = color(url);
 
-    // 行密度来自偏好设置（抓包列表密度）
-    var metrics = AppDisplaySettings.of(context)?.captureRowMetrics;
-    var titleSize = (metrics?.titleSize ?? 13) + 1;
+    final display = AppDisplaySettings.of(context);
+    final showDetails = display?.showCaptureRowDetails ?? true;
+    final metrics = display?.captureRowMetrics;
+    final titleSize = (metrics?.titleSize ?? 13) + 1;
 
     return GestureDetector(
         onLongPressStart: menu,
         child: ListTile(
           visualDensity: const VisualDensity(vertical: -4),
-          dense: metrics != null && !metrics.showMeta,
-          minVerticalPadding: metrics != null && metrics.top <= 3 ? 0 : 4,
+          minTileHeight: (showDetails ? 40 : 32) + (metrics?.gap ?? 3) * 16 / 3,
+          minVerticalPadding: (metrics?.gap ?? 3) * 4 / 3,
           minLeadingWidth: 5,
           selected: selected ||
               (widget.selectionController.isSelectionMode && widget.selectionController.contains(request.requestId)),
@@ -166,22 +159,13 @@ class RequestRowState extends State<RequestRow> {
           selectedColor: highlightColor,
           leading: rowLeading(),
           title: Text.rich(
-              maxLines: metrics?.titleMaxLines ?? 2,
+              maxLines: display?.compactCaptureRows == true ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               TextSpan(style: TextStyle(fontSize: titleSize), children: [
                 TextSpan(text: title.fixAutoLines()),
                 if (operationName != null) graphqlOperationSpan(request, fontSize: titleSize, fixAutoLines: true)!,
               ])),
-          subtitle: metrics != null && !metrics.showMeta
-              ? null
-              : Text.rich(
-                  maxLines: 1,
-                  TextSpan(children: [
-                    TextSpan(
-                        text: '#${widget.index} ',
-                        style: TextStyle(fontSize: metrics?.metaSize ?? 11, color: Colors.teal)),
-                    TextSpan(text: subTitle, style: TextStyle(fontSize: metrics?.metaSize ?? 11, color: Colors.grey)),
-                  ])),
+          subtitle: showDetails ? _buildRowDetails(metrics?.metaSize ?? 11) : null,
           trailing: request.protocolVersion == 'MQTT'
               ? const Icon(Icons.hub_outlined, color: Colors.teal)
               : getIcon(response,
@@ -209,6 +193,25 @@ class RequestRowState extends State<RequestRow> {
             }));
           },
         ));
+  }
+
+  Widget _buildRowDetails(double fontSize) {
+    final time = formatDate(request.requestTime, [HH, ':', nn, ':', ss]);
+    final contentType = response?.contentType.name.toUpperCase() ?? '';
+    final packagesSize = getPackagesSize(request, response);
+    final subtitle = request.protocolVersion == 'MQTT'
+        ? '$time - ${request.messages.length} packets'
+        : '$time - [${response?.status.code ?? ''}] $contentType $packagesSize ${response?.costTime() ?? ''}';
+    return Text.rich(
+      maxLines: 1,
+      TextSpan(
+        style: TextStyle(fontSize: fontSize, color: Colors.grey),
+        children: [
+          TextSpan(text: '#${widget.index} ', style: const TextStyle(color: Colors.teal)),
+          TextSpan(text: subtitle),
+        ],
+      ),
+    );
   }
 
   Widget? rowLeading() {
@@ -465,7 +468,8 @@ class RequestRowState extends State<RequestRow> {
   Future<void> showCustomRepeat(HttpRequest request) async {
     await Navigator.maybePop(availableContext);
     var pageRoute = MaterialPageRoute(
-        builder: (context) => futureWidget(SharedPreferences.getInstance(),
+        builder: (context) => futureWidget(
+            SharedPreferences.getInstance(),
             (prefs) => MobileCustomRepeat(
                 onScheduled: (cfg) =>
                     ReplayTaskManager.instance.start(request: request, action: () => onRepeat(request), config: cfg),

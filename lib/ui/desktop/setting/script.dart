@@ -25,7 +25,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:code_forge/code_forge.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:re_highlight/styles/monokai-sublime.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/ui/component/search/finder.dart';
 import 'package:re_highlight/languages/javascript.dart';
@@ -690,15 +690,13 @@ class _ScriptEditState extends State<ScriptEdit> {
                               ),
                               child: Stack(
                                 children: [
-                                  CodeForge(
+                                  ThemedCodeEditor(
                                     controller: script,
                                     language: langJavascript,
-                                    editorTheme: monokaiSublimeTheme,
                                     readOnly: _useRemote,
                                     autoFocus: true,
-                                    enableGuideLines: false,
                                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
-                                    textStyle: codeTextStyle(context, size: 13, color: Colors.white),
+                                    textStyle: codeTextStyle(context, size: 13),
                                   ),
                                   if (_useRemote && script.text.trim().isEmpty)
                                     Positioned.fill(

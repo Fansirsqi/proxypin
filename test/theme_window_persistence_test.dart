@@ -126,6 +126,7 @@ void main() {
     expect(await primary.saveTheme(shared), isTrue);
     await synchronizeTheme();
     expect(detail.savedThemes, isEmpty);
+    expect(detail.editorColorScheme, EditorColorScheme.followTheme);
     expect(detail.colorScheme(Brightness.light).primary, shared.light.primary);
     expect(detail.colorScheme(Brightness.dark).primary, shared.dark.primary);
     detail.headerViewMode.value = 'text';
@@ -135,11 +136,13 @@ void main() {
     primary.detailLayout.value =
         (tabs: DetailTabAlignment.right, labels: DetailTabLabelAlignment.center, headers: HeaderDensity.compact);
     primary.appFontScale = 1.2;
+    primary.applyDisplaySetting(() => primary.editorColorScheme = EditorColorScheme.atomOneDark);
     await primary.flushConfig();
     final renamed = primary.snapshotTheme('Renamed');
     expect(await primary.saveTheme(renamed, replacing: shared), isTrue);
     await synchronizeTheme();
     expect(detail.themePreset.name, renamed.name);
+    expect(detail.editorColorScheme, EditorColorScheme.atomOneDark);
     expect(detail.colorScheme(Brightness.light).primary, renamed.light.primary);
     expect(detail.colorScheme(Brightness.dark).primary, renamed.dark.primary);
     detail.headerViewMode.value = 'table';
@@ -155,6 +158,7 @@ void main() {
     expect(restored.detailLayout.value,
         (tabs: DetailTabAlignment.right, labels: DetailTabLabelAlignment.bottom, headers: HeaderDensity.dense));
     expect(restored.appFontScale, 1.2);
+    expect(restored.editorColorScheme, EditorColorScheme.atomOneDark);
     expect(restored.panelRatio, 0.4);
     expect(restored.language, const Locale('es'));
     expect(requests, [

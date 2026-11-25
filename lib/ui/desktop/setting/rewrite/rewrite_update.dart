@@ -26,8 +26,7 @@ import 'package:proxypin/ui/component/utils.dart';
 import 'package:proxypin/ui/component/widgets.dart';
 import 'package:proxypin/utils/lang.dart';
 import 'package:re_highlight/languages/json.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 
 /// @author wanghongen
 /// 2023/10/8
@@ -292,13 +291,9 @@ class _RewriteUpdateAddState extends State<RewriteUpdateAddDialog> {
                   Container(
                       height: 230,
                       decoration: BoxDecoration(border: Border.all(color: Colors.black12)),
-                      child: CodeForge(
+                      child: ThemedCodeEditor(
                         controller: _codeDataController,
                         language: isJsonText() ? langJson : null,
-                        selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
-                        editorTheme:
-                            Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
-                        enableGuideLines: false,
                         textStyle: codeTextStyle(context, size: 14),
                       )),
                 ]))));

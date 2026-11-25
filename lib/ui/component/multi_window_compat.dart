@@ -22,6 +22,7 @@ class DesktopMultiWindow {
   static const String _argumentsKey = '__arguments';
   static const String _themeKey = '__theme';
   static const String _themeMethod = 'applyTheme';
+  static const String _getThemeMethod = 'getThemeSettings';
   static const String _saveDetailPreferencesMethod = 'saveDetailPreferences';
   static const String _mainWindowChannelName = 'proxypin/main_window';
   static const String standaloneWindowArgument = 'standalone_window';
@@ -39,6 +40,7 @@ class DesktopMultiWindow {
     'refreshScript',
     'openScriptConsole',
     'registerConsoleLog',
+    'openToolWindow',
   };
 
   static final WindowMethodChannel _mainWindowChannel = WindowMethodChannel(
@@ -59,6 +61,7 @@ class DesktopMultiWindow {
   static Future<void> _standaloneQueue = Future.value();
   static Completer<dynamic>? _standaloneReply;
   static Future<void> _windowSaves = Future.value();
+  static Future<void> Function()? _flushStandaloneConfig;
   static bool _standaloneClosing = false;
   static bool _standaloneDisconnected = false;
   static Map<dynamic, dynamic>? _themeSettings;
@@ -91,7 +94,8 @@ class DesktopMultiWindow {
     _mainWindowScreenScale = scale is num && _validScale(scale.toDouble()) ? scale.toDouble() : null;
     _windowTitle = arguments.remove(_windowTitleKey) as String?;
     _windowSize = _sizeFromJson(arguments.remove(_windowSizeKey));
-    _themeSettings = arguments.remove(_themeKey) as Map?;
+    final launchTheme = arguments.remove(_themeKey) as Map?;
+    _themeSettings ??= launchTheme;
   }
 
   /// [size] 使用 Flutter 逻辑尺寸，由子窗口按目标显示器的 DPI 换算。
@@ -179,8 +183,8 @@ class DesktopMultiWindow {
     }));
   }
 
-  static Future<String> readStandaloneWindowArguments() async {
-    final input = StreamIterator(stdin.transform(utf8.decoder).transform(const LineSplitter()));
+  static Future<String> readStandaloneWindowArguments(Stream<List<int>> bytes) async {
+    final input = StreamIterator(bytes.transform(utf8.decoder).transform(const LineSplitter()));
     _standaloneInput = input;
     return await input.moveNext() ? input.current : '';
   }
@@ -235,14 +239,34 @@ class DesktopMultiWindow {
     for (final process in _standaloneProcesses.values) {
       _sendStandaloneEvent(process, _themeMethod, settings);
     }
-    for (final window in await WindowController.getAll()) {
+    try {
+      final windows = await WindowController.getAll();
       if (!identical(_themeSettings, settings)) return;
-      if (window.windowId == _currentWindowId) continue;
-      try {
-        await window.invokeMethod(_themeMethod, settings);
-      } on WindowChannelException {
-        // A window can close while the list is being read.
+      await Future.wait(windows.where((window) => window.windowId != _currentWindowId).map((window) async {
+        try {
+          await window.invokeMethod(_themeMethod, settings);
+        } on WindowChannelException catch (error, stackTrace) {
+          if (error.code != 'CHANNEL_UNREGISTERED' && error.code != 'CHANNEL_NOT_FOUND') {
+            logger.w('Could not update child window theme', error: error, stackTrace: stackTrace);
+          }
+        }
+      }));
+    } catch (error, stackTrace) {
+      logger.w('Could not broadcast child window theme', error: error, stackTrace: stackTrace);
+    }
+  }
+
+  static Future<void> _refreshNativeChildTheme() async {
+    if (isStandalone || _mainWindowId == _currentWindowId) return;
+
+    final previous = _themeSettings;
+    try {
+      final settings = await invokeMainWindowMethod<Map>(_getThemeMethod).timeout(const Duration(seconds: 1));
+      if (settings != null && identical(_themeSettings, previous)) {
+        _applyWindowTheme(settings);
       }
+    } catch (error, stackTrace) {
+      logger.w('Could not load the latest child window theme', error: error, stackTrace: stackTrace);
     }
   }
 
@@ -254,9 +278,26 @@ class DesktopMultiWindow {
     return operation;
   }
 
+  static Future<void> prepareStandaloneClose(Future<void> Function() flushConfig) async {
+    _flushStandaloneConfig = flushConfig;
+    await windowManager.setPreventClose(true);
+    windowManager.addListener(_StandaloneCloseListener());
+  }
+
   static Future<void> closeStandaloneWindow() async {
     if (_standaloneClosing) return;
     _standaloneClosing = true;
+    if (!_standaloneDisconnected) {
+      try {
+        await _flushStandaloneConfig?.call();
+      } catch (error, stackTrace) {
+        if (!_standaloneDisconnected) {
+          _standaloneClosing = false;
+          logger.e('Could not save configuration before closing the tool window', error: error, stackTrace: stackTrace);
+          return;
+        }
+      }
+    }
     await _windowSaves;
     await windowManager.destroy();
   }
@@ -264,6 +305,14 @@ class DesktopMultiWindow {
   /// 首帧初始化 Flutter surface 后调整隐藏窗口，并等待 resize 后的帧完成再显示。
   static void prepareWindow() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _refreshNativeChildTheme();
+      if (Platform.isMacOS || Platform.isWindows) {
+        try {
+          await windowManager.setHasShadow(true);
+        } catch (error, stackTrace) {
+          logger.w('Could not enable the native child window shadow', error: error, stackTrace: stackTrace);
+        }
+      }
       try {
         final title = _windowTitle;
         if (title != null) {
@@ -289,7 +338,7 @@ class DesktopMultiWindow {
         } catch (error, stackTrace) {
           logger.e('Show child window failed, closing hidden window', error: error, stackTrace: stackTrace);
           try {
-            await windowManager.close();
+            await _closeCurrentWindow();
           } catch (closeError, closeStackTrace) {
             logger.e('Close hidden child window failed', error: closeError, stackTrace: closeStackTrace);
           }
@@ -381,6 +430,7 @@ class DesktopMultiWindow {
   }
 
   static Future<dynamic> _dispatchMethodCall(MethodCall call, String fromWindowId) async {
+    if (call.method == _getThemeMethod) return _themeSettings;
     if (call.method == _saveDetailPreferencesMethod) {
       final save = onSaveDetailPreferences;
       if (save == null) throw StateError('Main window cannot save detail preferences');
@@ -548,18 +598,24 @@ class DesktopMultiWindow {
     return controller.setWindowMethodHandler(_handleWindowEvent);
   }
 
+  static Future<void> _closeCurrentWindow() => isStandalone ? closeStandaloneWindow() : windowManager.close();
+
+  static void _applyWindowTheme(Map<dynamic, dynamic> settings) {
+    _themeSettings = settings;
+    onThemeChanged?.call(settings);
+  }
+
   static Future<dynamic> _handleWindowEvent(MethodCall call) async {
     switch (call.method) {
       case 'window_close':
-        return isStandalone ? closeStandaloneWindow() : windowManager.close();
+        return _closeCurrentWindow();
       case 'window_focus':
         if (await windowManager.isMinimized()) {
           await windowManager.restore();
         }
         return windowManager.focus();
       case _themeMethod:
-        _themeSettings = call.arguments as Map;
-        onThemeChanged?.call(_themeSettings!);
+        _applyWindowTheme(call.arguments as Map);
         return null;
       default:
         return _handleMethodCall(call);
@@ -567,8 +623,16 @@ class DesktopMultiWindow {
   }
 }
 
+class _StandaloneCloseListener with WindowListener {
+  @override
+  void onWindowClose() => unawaited(DesktopMultiWindow.closeStandaloneWindow());
+}
+
 extension WindowControllerCompat on WindowController {
   Future<void> close() {
+    if (windowId == DesktopMultiWindow.currentWindowId) {
+      return DesktopMultiWindow._closeCurrentWindow();
+    }
     return _invokeWindowMethod('window_close');
   }
 

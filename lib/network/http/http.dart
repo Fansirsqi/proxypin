@@ -40,15 +40,21 @@ abstract class HttpMessage {
     "font-woff": ContentType.font,
     "text/html": ContentType.html,
     "application/xhtml+xml": ContentType.html,
+    "image/": ContentType.image,
     "+xml": ContentType.xml,
     "application/xml": ContentType.xml,
     "text/xml": ContentType.xml,
     "text/plain": ContentType.text,
     "application/x-www-form-urlencoded": ContentType.formUrl,
     "form-data": ContentType.formData,
-    "image": ContentType.image,
     "video": ContentType.video,
     "application/json": ContentType.json,
+    "+json": ContentType.json,
+    "application/yaml": ContentType.yaml,
+    "text/yaml": ContentType.yaml,
+    "application/x-yaml": ContentType.yaml,
+    "text/x-yaml": ContentType.yaml,
+    "+yaml": ContentType.yaml,
     "text/event-stream": ContentType.sse,
   };
 
@@ -92,10 +98,16 @@ abstract class HttpMessage {
   /// 是否是websocket协议
   bool get isWebSocket => headers.get("Upgrade") == 'websocket';
 
-  ContentType get contentType => contentTypes.entries
-      .firstWhere((element) => headers.contentType.contains(element.key),
-          orElse: () => const MapEntry("unknown", ContentType.http))
-      .value;
+  ContentType get contentType {
+    final header = headers.contentType;
+    final separator = header.indexOf(';');
+    final mime = (separator == -1 ? header : header.substring(0, separator)).trim().toLowerCase();
+    return contentTypes[mime] ??
+        contentTypes.entries
+            .firstWhere((element) => mime.contains(element.key),
+                orElse: () => const MapEntry('unknown', ContentType.http))
+            .value;
+  }
 
   List<int>? get body => _body;
 

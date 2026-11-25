@@ -1618,10 +1618,18 @@ class AppLocalizationsTh extends AppLocalizations {
   String get detailMediaUnavailable => 'Media preview unavailable';
 
   @override
-  String get captureListDensity => 'ความหนาแน่นของรายการ';
+  String get captureListDensity => 'ความสูงของแถวในรายการจับข้อมูล';
 
   @override
-  String get captureListDensitySubtitle => 'Row height of captured requests';
+  String get captureListDensitySubtitle => 'ปรับความสูงของแต่ละแถวในรายการจับข้อมูล';
+
+  @override
+  String get alwaysShowCaptureRowDetails => 'แสดงบรรทัดที่สองเสมอ';
+
+  @override
+  String alwaysShowCaptureRowDetailsSubtitle(int threshold) {
+    return 'แสดงสถานะ เวลา และระยะเวลาแม้ต่ำกว่า $threshold%';
+  }
 
   @override
   String get densityComfortable => 'สบายตา';
@@ -1657,6 +1665,12 @@ class AppLocalizationsTh extends AppLocalizations {
   String get codeFontSizeSubtitle => 'Font size of code editors';
 
   @override
+  String get editorColorScheme => 'ชุดสีตัวแก้ไขโค้ด';
+
+  @override
+  String get editorColorSchemeFollowTheme => 'ตามธีมของแอป';
+
+  @override
   String get appFont => 'Interface font';
 
   @override
@@ -1672,10 +1686,10 @@ class AppLocalizationsTh extends AppLocalizations {
   String get appFontScaleSubtitle => 'Scale the whole UI text up or down';
 
   @override
-  String get uiDensity => 'Interface density';
+  String get uiDensity => 'ระยะห่างขององค์ประกอบ';
 
   @override
-  String get uiDensitySubtitle => 'Spacing of buttons, lists and menus';
+  String get uiDensitySubtitle => 'ปรับระยะห่างในปุ่ม รายการ และเมนู';
 
   @override
   String get noOutputHint => 'Click Run to see output here';

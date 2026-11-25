@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:code_forge/code_forge.dart';
 import 'package:proxypin/l10n/app_localizations.dart';
-import 'package:re_highlight/styles/monokai-sublime.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:flutter_js/flutter_js.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:proxypin/ui/component/search/finder.dart';
@@ -137,12 +137,10 @@ class _JavaScriptState extends State<JavaScript> {
               const SizedBox(height: 8),
               SizedBox(
                   height: MediaQuery.of(context).size.height * 0.43,
-                  child: CodeForge(
+                  child: ThemedCodeEditor(
                     controller: code,
                     language: langJavascript,
-                    editorTheme: monokaiSublimeTheme,
                     autoFocus: true,
-                    enableGuideLines: false,
                     finderBuilder: (c, controller) => FindPanelView(controller: controller),
                     textStyle: const TextStyle(fontSize: 13),
                   )),

@@ -14,13 +14,10 @@
  * limitations under the License.
  */
 
-import 'package:code_forge/code_forge/code_area.dart';
 import 'package:code_forge/code_forge/controller.dart';
 import 'package:code_forge/code_forge/find_controller.dart';
-import 'package:code_forge/code_forge/styling.dart';
 import 'package:flutter/material.dart';
-import 'package:re_highlight/styles/atom-one-dark.dart';
-import 'package:re_highlight/styles/atom-one-light.dart';
+import 'package:proxypin/ui/component/themed_code_editor.dart';
 import 'package:flutter_toastr/flutter_toastr.dart';
 import 'package:get/get.dart';
 import 'package:proxypin/ui/component/code_style.dart';
@@ -288,12 +285,9 @@ class _RewriteUpdateAddState extends State<RewriteUpdateEdit> {
               Container(
                   height: MediaQuery.of(context).size.height * 0.45,
                   decoration: BoxDecoration(border: Border.all(color: Theme.of(context).dividerColor)),
-                  child: CodeForge(
+                  child: ThemedCodeEditor(
                     controller: _codeDataController,
                     language: isJsonText() ? langJson : null,
-                    selectionStyle: CodeSelectionStyle(cursorColor: Theme.of(context).colorScheme.primary),
-                    editorTheme: Theme.brightnessOf(context) == Brightness.dark ? atomOneDarkTheme : atomOneLightTheme,
-                    enableGuideLines: false,
                     textStyle: codeTextStyle(context, size: 14),
                   )),
             ])));
